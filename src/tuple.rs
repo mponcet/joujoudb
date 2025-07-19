@@ -1,16 +1,13 @@
-use std::borrow::Cow;
-
-use crate::zerocopy::{FromBytes, IntoBytes};
 use thiserror::Error;
+use zerocopy_derive::*;
 
 use crate::page::Page;
 
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
-struct TupleHeader {
+pub struct TupleHeader {
     len: u16,
 }
-
-const TUPLE_HEADER_SIZE: usize = std::mem::size_of::<TupleHeader>();
 
 impl TupleHeader {
     fn new(len: u16) -> Self {
@@ -30,10 +27,23 @@ impl TupleHeader {
 /// You can also create a tuple referencing a tuple inside a `Page`:
 ///
 /// ```
-/// let tuple = Tuple::from_bytes(&page_slice);
+/// let tuple = Page::get_tuple(slot_id);
 /// ```
-pub struct Tuple<'page> {
-    data: Cow<'page, [u8]>,
+#[derive(FromBytes, KnownLayout, Immutable)]
+#[repr(C)]
+pub struct TupleRef {
+    header: TupleHeader,
+    values: [u8],
+}
+
+pub struct TupleNew {
+    header: TupleHeader,
+    values: Box<[u8]>,
+}
+
+pub enum Tuple<'a> {
+    New(TupleNew),
+    Ref(&'a TupleRef),
 }
 
 #[derive(Error, Debug)]
@@ -43,63 +53,35 @@ pub enum TupleError {
 }
 
 impl<'a> Tuple<'a> {
-    pub fn new(value: Vec<u8>) -> Result<Self, TupleError> {
-        let value_len = value.len();
-        if TUPLE_HEADER_SIZE + value_len > Page::MAX_TUPLE_SIZE {
+    pub const HEADER_SIZE: usize = std::mem::size_of::<TupleHeader>();
+
+    pub fn try_new(values: Box<[u8]>) -> Result<Self, TupleError> {
+        let values_len = values.len();
+        if Self::HEADER_SIZE + values_len > Page::MAX_TUPLE_SIZE {
             return Err(TupleError::Size);
         }
 
-        let header = TupleHeader::new(value_len as u16);
-        let mut data = Vec::with_capacity(TUPLE_HEADER_SIZE + value_len);
-        data.extend_from_slice(header.as_bytes());
-        data.extend(value);
-
-        Ok(Self {
-            data: Cow::from(data),
-        })
+        Ok(Self::New(TupleNew {
+            header: TupleHeader::new(values_len as u16),
+            values,
+        }))
     }
 
-    // fn header(&self) -> &TupleHeader {
-    //     TupleHeader::try_ref_from_bytes(self.data.as_ref()).unwrap()
-    // }
+    pub fn header(&self) -> &TupleHeader {
+        match self {
+            Tuple::New(tuple_new) => &tuple_new.header,
+            Tuple::Ref(tuple_ref) => &tuple_ref.header,
+        }
+    }
 
-    pub fn value(&self) -> &[u8] {
-        &self.data[TUPLE_HEADER_SIZE..]
+    pub fn values(&self) -> &[u8] {
+        match self {
+            Tuple::New(tuple_new) => &tuple_new.values,
+            Tuple::Ref(tuple_ref) => &tuple_ref.values,
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.data.len()
-    }
-}
-
-impl<'page> FromBytes<'page> for Tuple<'page> {
-    fn from_bytes(bytes: &'page [u8]) -> Tuple<'page> {
-        Self {
-            data: Cow::from(bytes),
-        }
-    }
-}
-
-impl<'a> IntoBytes for Tuple<'a> {
-    fn as_bytes(&self) -> &[u8] {
-        self.data.as_ref()
-    }
-}
-
-// impl TryRefFromBytes for TupleHeader {
-//     fn try_ref_from_bytes(bytes: &[u8]) -> Result<&Self, ZeroCopyError> {
-//         if bytes.len() < std::mem::size_of::<Self>() {
-//             return Err(ZeroCopyError::Size);
-//         }
-//
-//         Ok(unsafe { &*(bytes.as_ptr() as *const Self) })
-//     }
-// }
-
-impl IntoBytes for TupleHeader {
-    fn as_bytes(&self) -> &[u8] {
-        let len = std::mem::size_of::<Self>();
-        let slf = self as *const Self;
-        unsafe { std::slice::from_raw_parts(slf.cast::<u8>(), len) }
+        Self::HEADER_SIZE + self.values().len()
     }
 }

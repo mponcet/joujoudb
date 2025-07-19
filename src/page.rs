@@ -1,19 +1,17 @@
-use crate::tuple::Tuple;
-use crate::zerocopy::{FromBytes, IntoBytes, RefFromBytes, RefMutFromBytes};
+use crate::tuple::{Tuple, TupleRef};
 use thiserror::Error;
+use zerocopy::*;
+use zerocopy_derive::*;
 
 pub const PAGE_SIZE: usize = 4096;
 
 type SlotId = u16;
 
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 struct PageHeader {
     num_slots: SlotId,
-    dirty: bool,
 }
-
-const PAGE_HEADER_SIZE: usize = std::mem::size_of::<PageHeader>();
-const PAGE_DATA_SIZE: usize = PAGE_SIZE - PAGE_HEADER_SIZE;
 
 /// A slotted page structure.
 ///
@@ -41,19 +39,20 @@ const PAGE_DATA_SIZE: usize = PAGE_SIZE - PAGE_HEADER_SIZE;
 ///| Tuple 1: [Data]               |
 ///| Tuple 0: [Data]               |
 ///+-------------------------------+ <- end
+
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct Page {
     header: PageHeader,
-    data: [u8; PAGE_DATA_SIZE],
+    data: [u8; Self::DATA_SIZE],
 }
 
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 struct PageSlot {
     offset: u16,
     len: u16,
 }
-
-pub const PAGE_SLOT_SIZE: usize = std::mem::size_of::<PageSlot>();
 
 impl PageSlot {
     fn new(offset: u16, len: u16) -> Self {
@@ -70,28 +69,6 @@ impl PageSlot {
     }
 }
 
-impl RefFromBytes<'_> for PageSlot {
-    fn ref_from_bytes(bytes: &'_ [u8]) -> &Self {
-        assert_eq!(bytes.len(), PAGE_SLOT_SIZE);
-        unsafe { &*(bytes.as_ptr() as *const PageSlot) }
-    }
-}
-
-impl RefMutFromBytes<'_> for PageSlot {
-    fn ref_mut_from_bytes(bytes: &'_ mut [u8]) -> &mut Self {
-        assert_eq!(bytes.len(), PAGE_SLOT_SIZE);
-        unsafe { &mut *(bytes.as_mut_ptr() as *mut PageSlot) }
-    }
-}
-
-impl IntoBytes for PageSlot {
-    fn as_bytes(&self) -> &[u8] {
-        let len = std::mem::size_of::<Self>();
-        let slf = self as *const Self;
-        unsafe { std::slice::from_raw_parts(slf.cast::<u8>(), len) }
-    }
-}
-
 #[derive(Error, Debug, PartialEq)]
 pub enum PageError {
     #[error("page is full")]
@@ -103,16 +80,17 @@ pub enum PageError {
 }
 
 impl Page {
+    const SLOT_SIZE: usize = std::mem::size_of::<PageSlot>();
+    const HEADER_SIZE: usize = std::mem::size_of::<PageHeader>();
+    const DATA_SIZE: usize = PAGE_SIZE - Self::HEADER_SIZE;
+
     // max tuple size: space for header and values
-    pub const MAX_TUPLE_SIZE: usize = PAGE_DATA_SIZE - PAGE_SLOT_SIZE;
+    pub const MAX_TUPLE_SIZE: usize = Self::DATA_SIZE - Self::SLOT_SIZE;
 
     pub fn new() -> Self {
         Self {
-            header: PageHeader {
-                num_slots: 0,
-                dirty: false,
-            },
-            data: [0; PAGE_DATA_SIZE],
+            header: PageHeader { num_slots: 0 },
+            data: [0; Self::DATA_SIZE],
         }
     }
 
@@ -128,39 +106,35 @@ impl Page {
     #[inline]
     fn last_tuple_offset(&self) -> Option<usize> {
         self.last_slot_id()
-            .map(|slotid| self.get_slot(slotid).unwrap().offset as usize)
+            .map(|slot_id| self.get_slot(slot_id).unwrap().offset as usize)
     }
 
-    fn get_slot(&self, slotid: SlotId) -> Option<&PageSlot> {
-        if slotid >= self.header.num_slots {
+    fn get_slot(&self, slot_id: SlotId) -> Option<&PageSlot> {
+        if slot_id >= self.header.num_slots {
             return None;
         }
 
-        let idx = slotid as usize * PAGE_SLOT_SIZE;
-        let bytes = &self.data[idx..idx + PAGE_SLOT_SIZE];
-        Some(PageSlot::ref_from_bytes(bytes))
+        let idx = slot_id as usize * Self::SLOT_SIZE;
+        let bytes = &self.data[idx..idx + Self::SLOT_SIZE];
+        PageSlot::ref_from_bytes(bytes).ok()
     }
 
-    fn get_slot_mut(&mut self, slotid: SlotId) -> Option<&mut PageSlot> {
-        if slotid >= self.header.num_slots {
+    fn get_slot_mut(&mut self, slot_id: SlotId) -> Option<&mut PageSlot> {
+        if slot_id >= self.header.num_slots {
             return None;
         }
 
-        let idx = slotid as usize * PAGE_SLOT_SIZE;
-        let bytes = &mut self.data[idx..idx + PAGE_SLOT_SIZE];
-        Some(PageSlot::ref_mut_from_bytes(bytes))
+        let idx = slot_id as usize * Self::SLOT_SIZE;
+        let bytes = &mut self.data[idx..idx + Self::SLOT_SIZE];
+        PageSlot::mut_from_bytes(bytes).ok()
     }
 
     // free space for both the slot and the tuple
     fn has_free_space(&self, tuple: &Tuple) -> bool {
-        let free_space = self.last_tuple_offset().unwrap_or(PAGE_DATA_SIZE)
-            - self.header.num_slots as usize * PAGE_SLOT_SIZE;
+        let free_space = self.last_tuple_offset().unwrap_or(Self::DATA_SIZE)
+            - self.header.num_slots as usize * Self::SLOT_SIZE;
 
-        free_space >= (PAGE_SLOT_SIZE + tuple.len())
-    }
-
-    fn mark_dirty(&mut self) {
-        self.header.dirty = true;
+        free_space >= (Self::SLOT_SIZE + tuple.len())
     }
 
     pub fn insert_tuple(&mut self, tuple: &Tuple) -> Result<SlotId, PageError> {
@@ -169,13 +143,15 @@ impl Page {
             let tuple_len = tuple.len();
             let idx = self
                 .last_tuple_offset()
-                .unwrap_or(PAGE_DATA_SIZE - tuple_len);
-            self.data[idx..idx + tuple_len].copy_from_slice(tuple.as_bytes());
+                .unwrap_or(Self::DATA_SIZE - tuple_len);
+            self.data[idx..idx + Tuple::HEADER_SIZE].copy_from_slice(tuple.header().as_bytes());
+            self.data[idx + Tuple::HEADER_SIZE..idx + Tuple::HEADER_SIZE + tuple.values().len()]
+                .copy_from_slice(tuple.values());
 
             // insert slot
             let slot = PageSlot::new(idx as u16, tuple_len as u16);
-            let idx = self.header.num_slots as usize * PAGE_SLOT_SIZE;
-            self.data[idx..idx + PAGE_SLOT_SIZE].copy_from_slice(slot.as_bytes());
+            let idx = self.header.num_slots as usize * Self::SLOT_SIZE;
+            self.data[idx..idx + Self::SLOT_SIZE].copy_from_slice(slot.as_bytes());
             self.header.num_slots += 1;
 
             Ok(self.header.num_slots - 1)
@@ -184,22 +160,23 @@ impl Page {
         }
     }
 
-    pub fn delete_tuple(&mut self, slotid: SlotId) -> Result<(), PageError> {
-        self.mark_dirty();
-        let slot = self.get_slot_mut(slotid).ok_or(PageError::SlotNotFound)?;
+    pub fn delete_tuple(&mut self, slot_id: SlotId) -> Result<(), PageError> {
+        let slot = self.get_slot_mut(slot_id).ok_or(PageError::SlotNotFound)?;
         slot.mark_deleted();
 
         Ok(())
     }
 
-    pub fn get_tuple(&self, slotid: SlotId) -> Result<Tuple, PageError> {
-        let slot = self.get_slot(slotid).ok_or(PageError::SlotNotFound)?;
+    pub fn get_tuple(&self, slot_id: SlotId) -> Result<Tuple, PageError> {
+        let slot = self.get_slot(slot_id).ok_or(PageError::SlotNotFound)?;
         let (idx, len) = (slot.offset as usize, slot.len as usize);
 
         if slot.is_deleted() {
             Err(PageError::SlotDeleted)
         } else {
-            Ok(Tuple::from_bytes(&self.data[idx..idx + len]))
+            Ok(Tuple::Ref(
+                TupleRef::ref_from_bytes(&self.data[idx..idx + len]).unwrap(),
+            ))
         }
     }
 }
@@ -216,8 +193,8 @@ mod tests {
     #[test]
     fn page_should_not_overflow() {
         let mut page = Page::new();
-        let data = vec![0, 1, 2, 3, 4, 5, 6, 7];
-        let tuple = Tuple::new(data).unwrap();
+        let data = vec![0, 1, 2, 3, 4, 5, 6, 7].into_boxed_slice();
+        let tuple = Tuple::try_new(data).unwrap();
 
         for _ in 0..PAGE_SIZE {
             let _ = page.insert_tuple(&tuple);
@@ -230,14 +207,14 @@ mod tests {
     #[test]
     fn test_get_after_insert_delete() {
         let mut page = Page::new();
-        let data = vec![0, 1, 2, 3, 4, 5, 6, 7];
-        let tuple = Tuple::new(data).unwrap();
+        let data = vec![0, 1, 2, 3, 4, 5, 6, 7].into_boxed_slice();
+        let tuple = Tuple::try_new(data).unwrap();
 
-        let slotid = page.insert_tuple(&tuple).expect("cannot insert tuple");
-        let tuple_ref = page.get_tuple(slotid).expect("cannot get tuple");
-        assert_eq!(tuple.value(), tuple_ref.value());
-        page.delete_tuple(slotid).expect("cannot delete tuple");
-        let tuple_ref = page.get_tuple(slotid);
+        let slot_id = page.insert_tuple(&tuple).expect("cannot insert tuple");
+        let tuple_ref = page.get_tuple(slot_id).expect("cannot get tuple");
+        assert_eq!(tuple.values(), tuple_ref.values());
+        page.delete_tuple(slot_id).expect("cannot delete tuple");
+        let tuple_ref = page.get_tuple(slot_id);
         assert_eq!(tuple_ref.err().unwrap(), PageError::SlotDeleted);
     }
 }
