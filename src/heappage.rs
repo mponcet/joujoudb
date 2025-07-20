@@ -141,15 +141,16 @@ impl HeapPage {
         if self.has_free_space(tuple) {
             // insert tuple
             let tuple_len = tuple.len();
-            let idx = self
+            let offset = self
                 .last_tuple_offset()
                 .unwrap_or(Self::DATA_SIZE - tuple_len);
-            self.data[idx..idx + Tuple::HEADER_SIZE].copy_from_slice(tuple.header().as_bytes());
-            self.data[idx + Tuple::HEADER_SIZE..idx + Tuple::HEADER_SIZE + tuple.values().len()]
-                .copy_from_slice(tuple.values());
+            let header_end = offset + Tuple::HEADER_SIZE;
+            self.data[offset..header_end].copy_from_slice(tuple.header().as_bytes());
+            let values = tuple.values();
+            self.data[header_end..header_end + values.len()].copy_from_slice(values);
 
             // insert slot
-            let slot = HeapPageSlot::new(idx as u16, tuple_len as u16);
+            let slot = HeapPageSlot::new(offset as u16, tuple_len as u16);
             let idx = self.header.num_slots as usize * Self::SLOT_SIZE;
             self.data[idx..idx + Self::SLOT_SIZE].copy_from_slice(slot.as_bytes());
             self.header.num_slots += 1;
