@@ -1,7 +1,7 @@
+use crate::heappage::HeapPage;
+
 use thiserror::Error;
 use zerocopy_derive::*;
-
-use crate::page::Page;
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
@@ -48,7 +48,7 @@ pub enum Tuple<'a> {
 
 #[derive(Error, Debug)]
 pub enum TupleError {
-    #[error("tuple size cannot exceed {}", Page::MAX_TUPLE_SIZE)]
+    #[error("tuple size cannot exceed {}", HeapPage::MAX_TUPLE_SIZE)]
     Size,
 }
 
@@ -57,7 +57,7 @@ impl<'a> Tuple<'a> {
 
     pub fn try_new(values: Box<[u8]>) -> Result<Self, TupleError> {
         let values_len = values.len();
-        if Self::HEADER_SIZE + values_len > Page::MAX_TUPLE_SIZE {
+        if Self::HEADER_SIZE + values_len > HeapPage::MAX_TUPLE_SIZE {
             return Err(TupleError::Size);
         }
 

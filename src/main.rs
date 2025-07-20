@@ -1,11 +1,13 @@
+mod heappage;
 mod page;
+mod storage;
 mod tuple;
 
-use page::Page;
+use heappage::HeapPage;
 use tuple::Tuple;
 
 fn main() {
-    let mut page = Page::new();
+    let mut page = HeapPage::new();
     let values = vec![0, 1, 2, 3].into_boxed_slice();
     let tuple = Tuple::try_new(values).unwrap();
     page.insert_tuple(&tuple).expect("cannot insert");
