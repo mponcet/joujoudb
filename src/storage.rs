@@ -58,9 +58,13 @@ impl Storage {
         Ok(())
     }
 
-    fn flush(&mut self) -> Result<(), StorageError> {
-        self.file.flush().map_err(StorageError::Io)?;
-        Ok(())
+    fn flush(&mut self) {
+        let result = self.file.flush();
+        if result.is_err() {
+            // if fsync fails, we can't make sure data is flushed to disk
+            // ref: https://wiki.postgresql.org/wiki/Fsync_Errors
+            panic!("flush (fsync) failed");
+        }
     }
 }
 
@@ -87,7 +91,7 @@ mod tests {
         let heappage: &mut HeapPage = page.into();
         heappage.insert_tuple(&tuple_w).unwrap();
         heapfile.write_page(page).unwrap();
-        heapfile.flush().unwrap();
+        heapfile.flush();
 
         // read back
         let page = &mut heapfile.read_page(0).unwrap();
