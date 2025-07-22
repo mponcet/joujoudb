@@ -2,7 +2,7 @@ use crate::page::{PAGE_SIZE, Page, PageId, PageMetadata};
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::FileExt;
+use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::Path;
 
 use thiserror::Error;
@@ -24,6 +24,7 @@ impl Storage {
             .write(true)
             .create(true)
             .truncate(false)
+            .custom_flags(libc::O_DIRECT)
             .open(path)
             .map_err(StorageError::Io)?;
 
