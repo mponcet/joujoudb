@@ -3,14 +3,16 @@ pub const PAGE_SIZE: usize = 4096;
 pub type PageId = usize;
 
 pub struct PageMetadata {
-    pub page_id: PageId,
-    // pub dirty: bool,
+    page_id: PageId,
+    dirty: bool,
 }
+
+// pub struct PageData(Box
 
 pub struct Page {
     pub metadata: PageMetadata,
-    // the actual data read/written from/to disk
-    pub data: Box<[u8; PAGE_SIZE]>,
+    // the actual data read from/written to disk
+    pub data: [u8; PAGE_SIZE],
 }
 
 impl Page {
@@ -18,13 +20,25 @@ impl Page {
         Self {
             metadata: PageMetadata {
                 page_id,
-                // dirty: false,
+                dirty: false,
             },
-            data: Box::new([0; PAGE_SIZE]),
+            data: [0; PAGE_SIZE],
         }
     }
 
-    // pub fn mark_dirty(&mut self) {
-    //     self.metadata.dirty = true;
-    // }
+    pub fn page_id(&self) -> PageId {
+        self.metadata.page_id
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.metadata.dirty
+    }
+
+    pub fn set_dirty(&mut self) {
+        self.metadata.dirty = true;
+    }
+
+    pub fn clear_dirty(&mut self) {
+        self.metadata.dirty = false;
+    }
 }

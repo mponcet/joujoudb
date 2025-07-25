@@ -1,4 +1,4 @@
-use crate::page::{PAGE_SIZE, Page, PageId, PageMetadata};
+use crate::page::{PAGE_SIZE, Page, PageId};
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -8,12 +8,12 @@ use std::path::Path;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-enum StorageError {
+pub enum StorageError {
     #[error("io error")]
     Io(#[from] std::io::Error),
 }
 
-struct Storage {
+pub struct Storage {
     file: File,
 }
 
@@ -34,22 +34,16 @@ impl Storage {
     pub fn read_page(&mut self, page_id: PageId) -> Result<Page, StorageError> {
         let offset = (page_id * PAGE_SIZE) as u64;
 
-        let mut data = Box::new([0u8; PAGE_SIZE]);
+        let mut page = Page::new(page_id);
         self.file
-            .read_exact_at(data.as_mut_slice(), offset)
+            .read_exact_at(page.data.as_mut_slice(), offset)
             .map_err(StorageError::Io)?;
 
-        Ok(Page {
-            metadata: PageMetadata {
-                page_id,
-                // dirty: false,
-            },
-            data,
-        })
+        Ok(page)
     }
 
     pub fn write_page(&mut self, page: &Page) -> Result<(), StorageError> {
-        let offset = (page.metadata.page_id * PAGE_SIZE) as u64;
+        let offset = (page.page_id() * PAGE_SIZE) as u64;
 
         self.file
             .write_all_at(page.data.as_slice(), offset)
@@ -58,7 +52,7 @@ impl Storage {
         Ok(())
     }
 
-    fn flush(&mut self) {
+    pub fn flush(&mut self) {
         let result = self.file.flush();
         if result.is_err() {
             // if fsync fails, we can't make sure data is flushed to disk
@@ -95,7 +89,7 @@ mod tests {
 
         // read back
         let page = &mut heapfile.read_page(0).unwrap();
-        assert_eq!(page.metadata.page_id, 0);
+        assert_eq!(page.page_id(), 0);
         let heappage: &mut HeapPage = page.into();
         let tuple_r = heappage.get_tuple(0).unwrap();
 
