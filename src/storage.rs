@@ -60,6 +60,12 @@ impl Storage {
             panic!("flush (fsync) failed");
         }
     }
+
+    // this information will be later stored in a metadata page
+    // at the beginning of the file
+    pub fn last_page_id(&mut self) -> PageId {
+        self.file.metadata().unwrap().len() as PageId / PAGE_SIZE
+    }
 }
 
 #[cfg(test)]
