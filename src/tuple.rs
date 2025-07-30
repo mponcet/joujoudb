@@ -3,8 +3,8 @@ use crate::heappage::HeapPage;
 use thiserror::Error;
 use zerocopy_derive::*;
 
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
-#[repr(C)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct TupleHeader {
     len: u16,
 }
@@ -29,8 +29,8 @@ impl TupleHeader {
 /// ```
 /// let tuple = Page::get_tuple(slot_id);
 /// ```
-#[derive(FromBytes, KnownLayout, Immutable)]
-#[repr(C)]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct TupleRef {
     header: TupleHeader,
     values: [u8],

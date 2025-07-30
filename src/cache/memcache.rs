@@ -148,7 +148,8 @@ impl MemCache {
         let metadata = unsafe { self.get_metadata_ref(idx) };
         let _guard = metadata.latch.write().unwrap();
         let counter = &metadata.counter;
-        counter.fetch_add(1, Ordering::Relaxed);
+        let old_counter = counter.fetch_add(1, Ordering::Relaxed);
+        assert_eq!(old_counter, 0);
         drop(page_table);
 
         self.eviction_policy.record_access(page_id);
@@ -263,7 +264,8 @@ impl Drop for PageRef<'_> {
 
 impl Drop for PageRefMut<'_> {
     fn drop(&mut self) {
-        self.counter.fetch_sub(1, Ordering::Relaxed);
+        let old_counter = self.counter.fetch_sub(1, Ordering::Relaxed);
+        assert_eq!(old_counter, 1)
     }
 }
 
