@@ -31,16 +31,16 @@ impl PageCache {
     pub fn new_page(&self) -> Result<PageRefMut, PageCacheError> {
         let mut storage = self.storage.lock().unwrap();
         let page_id = storage.last_page_id();
-        let page = Page::new(page_id);
+        let page = Page::new();
         // FIXME: needed for self.storage.last_page_id()
-        storage.write_page(&page)?;
+        storage.write_page(&page, page_id)?;
 
         // try evict a page if the memory cache is full
         while let Some(page_id) = self.mem_cache.pick_page_to_evict() {
             let Ok(page) = self.mem_cache.get_page(page_id) else {
                 continue;
             };
-            storage.write_page(&page)?;
+            storage.write_page(&page, page_id)?;
             storage.flush();
             drop(page);
 
@@ -51,13 +51,9 @@ impl PageCache {
         }
         drop(storage);
 
-        let page_id = self
-            .mem_cache
-            .add_page(&page)
-            .map_err(PageCacheError::MemCache)?;
-
-        // FIXME: could return a PageRefMut
-        self.get_page_mut(page_id)
+        self.mem_cache
+            .new_page(page_id)
+            .map_err(PageCacheError::MemCache)
     }
 
     pub fn get_page(&self, page_id: PageId) -> Result<PageRef, PageCacheError> {
@@ -71,7 +67,10 @@ impl PageCache {
                 .read_page(page_id)
                 .map_err(PageCacheError::Storage)?;
 
-            let _ = self.mem_cache.add_page(&page);
+            let page_id = self
+                .mem_cache
+                .add_page(&page, page_id)
+                .map_err(PageCacheError::MemCache)?;
             self.get_page(page_id)
         }
     }
@@ -87,8 +86,13 @@ impl PageCache {
                 .read_page(page_id)
                 .map_err(PageCacheError::Storage)?;
 
-            let _ = self.mem_cache.add_page(&page);
-            self.get_page_mut(page_id)
+            let _ = self
+                .mem_cache
+                .add_page(&page, page_id)
+                .map_err(PageCacheError::MemCache);
+            self.mem_cache
+                .get_page_mut(page_id)
+                .map_err(PageCacheError::MemCache)
         }
     }
 }

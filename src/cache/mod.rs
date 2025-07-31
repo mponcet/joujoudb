@@ -4,7 +4,7 @@ mod pagecache;
 
 use crate::page::PageId;
 
-pub const DEFAULT_PAGE_CACHE_SIZE: usize = 1_000;
+pub const DEFAULT_PAGE_CACHE_SIZE: usize = 10;
 
 pub trait EvictionPolicy: Send + Sync {
     fn record_access(&self, page_id: PageId);
@@ -12,4 +12,5 @@ pub trait EvictionPolicy: Send + Sync {
     fn should_evict(&self) -> Option<PageId>;
 }
 
+pub use memcache::{PageRef, PageRefMut};
 pub use pagecache::PageCache;

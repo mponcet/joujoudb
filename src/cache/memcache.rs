@@ -1,56 +1,55 @@
 use crate::cache::DEFAULT_PAGE_CACHE_SIZE;
 use crate::cache::EvictionPolicy;
 use crate::cache::lru::LRU;
-use crate::page::{Page, PageId};
+use crate::page::{Page, PageId, PageMetadata};
 
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, VecDeque};
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use thiserror::Error;
-
-// SAFETY:
-// Shared and exclusive access are handled with a separate RwLock stored
-// in PageMetadata, so it is safe to mark UnsafePage as Sync.
-// In the future, consider looking at: https://github.com/rust-lang/rust/issues/95439
-unsafe impl Sync for UnsafePage {}
 
 // UnsafeCell<Page> has the same in-memory layout as Page.
 // We could use RwLock<Page> but RwLock metadata would be stored
 // next to Page data. This way we make sure pages are contiguous
 // in-memory and no RwLock metadata is prepended or appended.
 struct UnsafePage(UnsafeCell<Page>);
+// SAFETY:
+// Shared and exclusive access are handled with a separate RwLock stored
+// in PageMetadata, so it is safe to mark UnsafePage as Sync.
+// In the future, consider looking at: https://github.com/rust-lang/rust/issues/95439
+unsafe impl Sync for UnsafePage {}
 
 impl Default for UnsafePage {
     fn default() -> Self {
-        // FIXME: create an invalid page
-        Self(UnsafeCell::new(Page::new(0)))
+        Self(UnsafeCell::new(Page::new()))
     }
 }
 
-struct PageMetadata {
-    latch: RwLock<()>,
-    counter: AtomicUsize,
+struct UnsafePageMetadata(UnsafeCell<PageMetadata>);
+// SAFETY: see UnsafePage
+unsafe impl Sync for UnsafePageMetadata {}
+
+impl UnsafePageMetadata {
+    fn new(page_id: PageId) -> Self {
+        Self(UnsafeCell::new(PageMetadata::new(page_id)))
+    }
 }
 
-impl Default for PageMetadata {
+struct PageLatch {
+    latch: RwLock<()>,
+}
+
+// struct UnsafePageLock(UnsafeCell<PageMetadata>);
+// SAFETY: see UnsafePage
+// unsafe impl Sync for UnsafePageMetadata {}
+
+impl Default for PageLatch {
     fn default() -> Self {
         Self {
             latch: RwLock::new(()),
-            counter: AtomicUsize::new(0),
         }
-    }
-}
-
-// SAFETY: see UnsafePage
-unsafe impl Sync for UnsafePageMetadata {}
-struct UnsafePageMetadata(UnsafeCell<PageMetadata>);
-
-impl Default for UnsafePageMetadata {
-    fn default() -> Self {
-        Self(UnsafeCell::new(PageMetadata::default()))
     }
 }
 
@@ -71,6 +70,7 @@ impl Default for PageTable {
 pub struct MemCache {
     pages: Box<[UnsafePage]>,
     pages_metadata: Box<[UnsafePageMetadata]>,
+    pages_latch: Box<[PageLatch]>,
     page_table: Mutex<PageTable>,
     eviction_policy: Box<dyn EvictionPolicy>,
 }
@@ -87,10 +87,13 @@ impl MemCache {
     pub fn new() -> Self {
         let pages = std::iter::repeat_with(UnsafePage::default).take(DEFAULT_PAGE_CACHE_SIZE);
         let pages_metadata =
-            std::iter::repeat_with(UnsafePageMetadata::default).take(DEFAULT_PAGE_CACHE_SIZE);
+            // FIXME: create an invalid page ?
+            std::iter::repeat_with(|| UnsafePageMetadata::new(0)).take(DEFAULT_PAGE_CACHE_SIZE);
+        let pages_lock = std::iter::repeat_with(PageLatch::default).take(DEFAULT_PAGE_CACHE_SIZE);
         Self {
             pages: Box::from_iter(pages),
             pages_metadata: Box::from_iter(pages_metadata),
+            pages_latch: Box::from_iter(pages_lock),
             page_table: Mutex::new(PageTable::default()),
             eviction_policy: Box::new(LRU::new()),
         }
@@ -123,17 +126,17 @@ impl MemCache {
 
         let page = unsafe { self.get_page_ref(idx) };
         let metadata = unsafe { self.get_metadata_ref(idx) };
-        let _guard = metadata.latch.read().unwrap();
-        let counter = &metadata.counter;
-        counter.fetch_add(1, Ordering::Relaxed);
+        let latch = &self.pages_latch[idx].latch;
+        let _guard = latch.read().unwrap();
+        metadata.pin();
         drop(page_table);
 
         self.eviction_policy.record_access(page_id);
 
         Ok(PageRef {
             _guard,
-            counter,
             page,
+            metadata,
         })
     }
 
@@ -145,10 +148,10 @@ impl MemCache {
             .ok_or(MemCacheError::PageNotFound)?;
 
         let page = unsafe { self.get_page_ref_mut(idx) };
-        let metadata = unsafe { self.get_metadata_ref(idx) };
-        let _guard = metadata.latch.write().unwrap();
-        let counter = &metadata.counter;
-        let old_counter = counter.fetch_add(1, Ordering::Relaxed);
+        let metadata = unsafe { self.get_metadata_ref_mut(idx) };
+        let latch = &self.pages_latch[idx].latch;
+        let _guard = latch.write().unwrap();
+        let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
         drop(page_table);
 
@@ -156,14 +159,13 @@ impl MemCache {
 
         Ok(PageRefMut {
             _guard,
-            counter,
             page,
+            metadata,
         })
     }
 
-    pub fn add_page(&self, page: &Page) -> Result<PageId, MemCacheError> {
+    pub fn new_page(&self, page_id: PageId) -> Result<PageRefMut, MemCacheError> {
         let mut page_table = self.page_table.lock().unwrap();
-        let page_id = page.page_id();
 
         #[cfg(not(test))]
         assert!(page_table.map.contains_key(&page_id));
@@ -174,8 +176,39 @@ impl MemCache {
             .ok_or(MemCacheError::Full)?;
         page_table.map.insert(page_id, idx);
 
-        *unsafe { self.get_page_ref_mut(idx) } = Page::new(page_id);
-        *unsafe { self.get_metadata_ref_mut(idx) } = PageMetadata::default();
+        let page = unsafe { self.get_page_ref_mut(idx) };
+        let metadata = unsafe { self.get_metadata_ref_mut(idx) };
+        let latch = &self.pages_latch[idx].latch;
+        *page = Page::new();
+        *metadata = PageMetadata::new(page_id);
+        let _guard = latch.write().unwrap();
+        let old_counter = metadata.pin();
+        assert_eq!(old_counter, 0);
+        drop(page_table);
+
+        self.eviction_policy.record_access(page_id);
+
+        Ok(PageRefMut {
+            _guard,
+            page,
+            metadata,
+        })
+    }
+
+    pub fn add_page(&self, page: &Page, page_id: PageId) -> Result<PageId, MemCacheError> {
+        let mut page_table = self.page_table.lock().unwrap();
+
+        #[cfg(not(test))]
+        assert!(page_table.map.contains_key(&page_id));
+
+        let idx = page_table
+            .free_list
+            .pop_front()
+            .ok_or(MemCacheError::Full)?;
+        page_table.map.insert(page_id, idx);
+
+        *unsafe { self.get_page_ref_mut(idx) } = *page;
+        *unsafe { self.get_metadata_ref_mut(idx) } = PageMetadata::new(page_id);
         drop(page_table);
 
         self.eviction_policy.record_access(page_id);
@@ -192,8 +225,9 @@ impl MemCache {
             .ok_or(MemCacheError::PageNotFound)?;
 
         let metadata = unsafe { self.get_metadata_ref(idx) };
-        let _guard = metadata.latch.write().unwrap();
-        assert_eq!(metadata.counter.load(Ordering::Relaxed), 0);
+        let latch = &self.pages_latch[idx].latch;
+        let _guard = latch.write().unwrap();
+        assert_eq!(metadata.get_pin_counter(), 0);
         page_table.map.remove(&page_id);
         page_table.free_list.push_back(idx);
 
@@ -208,7 +242,7 @@ impl MemCache {
             let idx = *page_table.map.get(&page_id).unwrap();
             let metadata = unsafe { self.get_metadata_ref(idx) };
 
-            if metadata.counter.load(Ordering::Relaxed) > 0 {
+            if metadata.get_pin_counter() > 0 {
                 return None;
             }
             drop(page_table);
@@ -224,14 +258,46 @@ impl MemCache {
 
 pub struct PageRef<'page> {
     _guard: RwLockReadGuard<'page, ()>,
-    counter: &'page AtomicUsize,
     page: &'page Page,
+    metadata: &'page PageMetadata,
+}
+
+impl PageRef<'_> {
+    pub fn page(&self) -> &Page {
+        self.page
+    }
+
+    pub fn metadata(&self) -> &PageMetadata {
+        self.metadata
+    }
+
+    // pub fn metadata_mut(&mut self) -> &mut PageMetadata {
+    //     self.metadata
+    // }
 }
 
 pub struct PageRefMut<'page> {
     _guard: RwLockWriteGuard<'page, ()>,
-    counter: &'page AtomicUsize,
     page: &'page mut Page,
+    metadata: &'page mut PageMetadata,
+}
+
+impl PageRefMut<'_> {
+    pub fn page(&self) -> &Page {
+        self.page
+    }
+
+    pub fn page_mut(&mut self) -> &mut Page {
+        self.page
+    }
+
+    pub fn metadata(&self) -> &PageMetadata {
+        self.metadata
+    }
+
+    pub fn metadata_mut(&mut self) -> &mut PageMetadata {
+        self.metadata
+    }
 }
 
 impl Deref for PageRef<'_> {
@@ -258,13 +324,13 @@ impl DerefMut for PageRefMut<'_> {
 
 impl Drop for PageRef<'_> {
     fn drop(&mut self) {
-        self.counter.fetch_sub(1, Ordering::Relaxed);
+        self.metadata.unpin();
     }
 }
 
 impl Drop for PageRefMut<'_> {
     fn drop(&mut self) {
-        let old_counter = self.counter.fetch_sub(1, Ordering::Relaxed);
+        let old_counter = self.metadata.unpin();
         assert_eq!(old_counter, 1)
     }
 }
@@ -282,9 +348,8 @@ mod tests {
         let cache1 = cache.clone();
         let cache2 = cache.clone();
         let t1 = std::thread::spawn(move || {
-            for _ in 1..100000 {
-                let page = Page::new(0);
-                let _ = cache1.add_page(&page);
+            for page_id in 1..100000 {
+                let _ = cache1.new_page(page_id);
             }
         });
         let t2 = std::thread::spawn(move || {
