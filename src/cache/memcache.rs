@@ -67,6 +67,85 @@ impl Default for PageTable {
     }
 }
 
+pub struct PageRef<'page> {
+    _guard: RwLockReadGuard<'page, ()>,
+    page: &'page Page,
+    metadata: &'page PageMetadata,
+}
+
+impl PageRef<'_> {
+    pub fn page(&self) -> &Page {
+        self.page
+    }
+
+    pub fn metadata(&self) -> &PageMetadata {
+        self.metadata
+    }
+
+    // pub fn metadata_mut(&mut self) -> &mut PageMetadata {
+    //     self.metadata
+    // }
+}
+
+pub struct PageRefMut<'page> {
+    _guard: RwLockWriteGuard<'page, ()>,
+    page: &'page mut Page,
+    metadata: &'page mut PageMetadata,
+}
+
+impl PageRefMut<'_> {
+    pub fn page(&self) -> &Page {
+        self.page
+    }
+
+    pub fn page_mut(&mut self) -> &mut Page {
+        self.page
+    }
+
+    pub fn metadata(&self) -> &PageMetadata {
+        self.metadata
+    }
+
+    pub fn metadata_mut(&mut self) -> &mut PageMetadata {
+        self.metadata
+    }
+}
+
+impl Deref for PageRef<'_> {
+    type Target = Page;
+
+    fn deref(&self) -> &Self::Target {
+        self.page
+    }
+}
+
+impl Deref for PageRefMut<'_> {
+    type Target = Page;
+
+    fn deref(&self) -> &Self::Target {
+        self.page
+    }
+}
+
+impl DerefMut for PageRefMut<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.page
+    }
+}
+
+impl Drop for PageRef<'_> {
+    fn drop(&mut self) {
+        self.metadata.unpin();
+    }
+}
+
+impl Drop for PageRefMut<'_> {
+    fn drop(&mut self) {
+        let old_counter = self.metadata.unpin();
+        assert_eq!(old_counter, 1)
+    }
+}
+
 pub struct MemCache {
     pages: Box<[UnsafePage]>,
     pages_metadata: Box<[UnsafePageMetadata]>,
@@ -253,85 +332,6 @@ impl MemCache {
         } else {
             None
         }
-    }
-}
-
-pub struct PageRef<'page> {
-    _guard: RwLockReadGuard<'page, ()>,
-    page: &'page Page,
-    metadata: &'page PageMetadata,
-}
-
-impl PageRef<'_> {
-    pub fn page(&self) -> &Page {
-        self.page
-    }
-
-    pub fn metadata(&self) -> &PageMetadata {
-        self.metadata
-    }
-
-    // pub fn metadata_mut(&mut self) -> &mut PageMetadata {
-    //     self.metadata
-    // }
-}
-
-pub struct PageRefMut<'page> {
-    _guard: RwLockWriteGuard<'page, ()>,
-    page: &'page mut Page,
-    metadata: &'page mut PageMetadata,
-}
-
-impl PageRefMut<'_> {
-    pub fn page(&self) -> &Page {
-        self.page
-    }
-
-    pub fn page_mut(&mut self) -> &mut Page {
-        self.page
-    }
-
-    pub fn metadata(&self) -> &PageMetadata {
-        self.metadata
-    }
-
-    pub fn metadata_mut(&mut self) -> &mut PageMetadata {
-        self.metadata
-    }
-}
-
-impl Deref for PageRef<'_> {
-    type Target = Page;
-
-    fn deref(&self) -> &Self::Target {
-        self.page
-    }
-}
-
-impl Deref for PageRefMut<'_> {
-    type Target = Page;
-
-    fn deref(&self) -> &Self::Target {
-        self.page
-    }
-}
-
-impl DerefMut for PageRefMut<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.page
-    }
-}
-
-impl Drop for PageRef<'_> {
-    fn drop(&mut self) {
-        self.metadata.unpin();
-    }
-}
-
-impl Drop for PageRefMut<'_> {
-    fn drop(&mut self) {
-        let old_counter = self.metadata.unpin();
-        assert_eq!(old_counter, 1)
     }
 }
 
