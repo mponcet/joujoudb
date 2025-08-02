@@ -243,7 +243,11 @@ impl MemCache {
         })
     }
 
-    pub fn new_page(&self, page_id: PageId) -> Result<PageRefMut, MemCacheError> {
+    pub fn new_page(
+        &self,
+        page_id: PageId,
+        page_data: Option<&Page>,
+    ) -> Result<PageRef, MemCacheError> {
         let mut page_table = self.page_table.lock().unwrap();
 
         #[cfg(not(test))]
@@ -258,7 +262,42 @@ impl MemCache {
         let page = unsafe { self.get_page_ref_mut(idx) };
         let metadata = unsafe { self.get_metadata_ref_mut(idx) };
         let latch = &self.pages_latch[idx].latch;
-        *page = Page::new();
+        *page = *page_data.unwrap_or(&Page::new());
+        *metadata = PageMetadata::new(page_id);
+        let _guard = latch.read().unwrap();
+        let old_counter = metadata.pin();
+        assert_eq!(old_counter, 0);
+        drop(page_table);
+
+        self.eviction_policy.record_access(page_id);
+
+        Ok(PageRef {
+            _guard,
+            page,
+            metadata,
+        })
+    }
+
+    pub fn new_page_mut(
+        &self,
+        page_id: PageId,
+        page_data: Option<&Page>,
+    ) -> Result<PageRefMut, MemCacheError> {
+        let mut page_table = self.page_table.lock().unwrap();
+
+        #[cfg(not(test))]
+        assert!(page_table.map.contains_key(&page_id));
+
+        let idx = page_table
+            .free_list
+            .pop_front()
+            .ok_or(MemCacheError::Full)?;
+        page_table.map.insert(page_id, idx);
+
+        let page = unsafe { self.get_page_ref_mut(idx) };
+        let metadata = unsafe { self.get_metadata_ref_mut(idx) };
+        let latch = &self.pages_latch[idx].latch;
+        *page = *page_data.unwrap_or(&Page::new());
         *metadata = PageMetadata::new(page_id);
         let _guard = latch.write().unwrap();
         let old_counter = metadata.pin();
@@ -272,27 +311,6 @@ impl MemCache {
             page,
             metadata,
         })
-    }
-
-    pub fn add_page(&self, page: &Page, page_id: PageId) -> Result<PageId, MemCacheError> {
-        let mut page_table = self.page_table.lock().unwrap();
-
-        #[cfg(not(test))]
-        assert!(page_table.map.contains_key(&page_id));
-
-        let idx = page_table
-            .free_list
-            .pop_front()
-            .ok_or(MemCacheError::Full)?;
-        page_table.map.insert(page_id, idx);
-
-        *unsafe { self.get_page_ref_mut(idx) } = *page;
-        *unsafe { self.get_metadata_ref_mut(idx) } = PageMetadata::new(page_id);
-        drop(page_table);
-
-        self.eviction_policy.record_access(page_id);
-
-        Ok(page_id)
     }
 
     pub fn remove_page(&self, page_id: PageId) -> Result<(), MemCacheError> {
@@ -349,7 +367,7 @@ mod tests {
         let cache2 = cache.clone();
         let t1 = std::thread::spawn(move || {
             for page_id in 1..100000 {
-                let _ = cache1.new_page(page_id);
+                let _ = cache1.new_page(page_id, None);
             }
         });
         let t2 = std::thread::spawn(move || {

@@ -52,7 +52,7 @@ impl PageCache {
         drop(storage);
 
         self.mem_cache
-            .new_page(page_id)
+            .new_page_mut(page_id, None)
             .map_err(PageCacheError::MemCache)
     }
 
@@ -67,11 +67,9 @@ impl PageCache {
                 .read_page(page_id)
                 .map_err(PageCacheError::Storage)?;
 
-            let page_id = self
-                .mem_cache
-                .add_page(&page, page_id)
-                .map_err(PageCacheError::MemCache)?;
-            self.get_page(page_id)
+            self.mem_cache
+                .new_page(page_id, Some(&page))
+                .map_err(PageCacheError::MemCache)
         }
     }
 
@@ -86,12 +84,8 @@ impl PageCache {
                 .read_page(page_id)
                 .map_err(PageCacheError::Storage)?;
 
-            let _ = self
-                .mem_cache
-                .add_page(&page, page_id)
-                .map_err(PageCacheError::MemCache);
             self.mem_cache
-                .get_page_mut(page_id)
+                .new_page_mut(page_id, Some(&page))
                 .map_err(PageCacheError::MemCache)
         }
     }
