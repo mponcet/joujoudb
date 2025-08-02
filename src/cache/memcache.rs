@@ -71,6 +71,7 @@ pub struct PageRef<'page> {
     _guard: RwLockReadGuard<'page, ()>,
     page: &'page Page,
     metadata: &'page PageMetadata,
+    eviction_policy: &'page Mutex<dyn EvictionPolicy>,
 }
 
 impl PageRef<'_> {
@@ -91,6 +92,7 @@ pub struct PageRefMut<'page> {
     _guard: RwLockWriteGuard<'page, ()>,
     page: &'page mut Page,
     metadata: &'page mut PageMetadata,
+    eviction_policy: &'page Mutex<dyn EvictionPolicy>,
 }
 
 impl PageRefMut<'_> {
@@ -136,13 +138,25 @@ impl DerefMut for PageRefMut<'_> {
 impl Drop for PageRef<'_> {
     fn drop(&mut self) {
         self.metadata.unpin();
+        if self.metadata.get_pin_counter() == 0 {
+            self.eviction_policy
+                .lock()
+                .unwrap()
+                .set_evictable(self.metadata.page_id)
+        }
     }
 }
 
 impl Drop for PageRefMut<'_> {
     fn drop(&mut self) {
         let old_counter = self.metadata.unpin();
-        assert_eq!(old_counter, 1)
+        assert_eq!(old_counter, 1);
+        if self.metadata.get_pin_counter() == 0 {
+            self.eviction_policy
+                .lock()
+                .unwrap()
+                .set_evictable(self.metadata.page_id);
+        }
     }
 }
 
@@ -151,7 +165,7 @@ pub struct MemCache {
     pages_metadata: Box<[UnsafePageMetadata]>,
     pages_latch: Box<[PageLatch]>,
     page_table: Mutex<PageTable>,
-    eviction_policy: Box<dyn EvictionPolicy>,
+    eviction_policy: Box<Mutex<dyn EvictionPolicy>>,
 }
 
 #[derive(Error, Debug)]
@@ -174,7 +188,7 @@ impl MemCache {
             pages_metadata: Box::from_iter(pages_metadata),
             pages_latch: Box::from_iter(pages_lock),
             page_table: Mutex::new(PageTable::default()),
-            eviction_policy: Box::new(LRU::new()),
+            eviction_policy: Box::new(Mutex::new(LRU::new())),
         }
     }
 
@@ -208,14 +222,16 @@ impl MemCache {
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.read().unwrap();
         metadata.pin();
-        drop(page_table);
 
-        self.eviction_policy.record_access(page_id);
+        let mut eviction_policy = self.eviction_policy.lock().unwrap();
+        eviction_policy.record_access(page_id);
+        eviction_policy.set_unevictable(page_id);
 
         Ok(PageRef {
             _guard,
             page,
             metadata,
+            eviction_policy: &self.eviction_policy,
         })
     }
 
@@ -232,14 +248,16 @@ impl MemCache {
         let _guard = latch.write().unwrap();
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
-        drop(page_table);
 
-        self.eviction_policy.record_access(page_id);
+        let mut eviction_policy = self.eviction_policy.lock().unwrap();
+        eviction_policy.record_access(page_id);
+        eviction_policy.set_unevictable(page_id);
 
         Ok(PageRefMut {
             _guard,
             page,
             metadata,
+            eviction_policy: &self.eviction_policy,
         })
     }
 
@@ -267,14 +285,16 @@ impl MemCache {
         let _guard = latch.read().unwrap();
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
-        drop(page_table);
 
-        self.eviction_policy.record_access(page_id);
+        let mut eviction_policy = self.eviction_policy.lock().unwrap();
+        eviction_policy.record_access(page_id);
+        eviction_policy.set_unevictable(page_id);
 
         Ok(PageRef {
             _guard,
             page,
             metadata,
+            eviction_policy: &self.eviction_policy,
         })
     }
 
@@ -302,14 +322,16 @@ impl MemCache {
         let _guard = latch.write().unwrap();
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
-        drop(page_table);
 
-        self.eviction_policy.record_access(page_id);
+        let mut eviction_policy = self.eviction_policy.lock().unwrap();
+        eviction_policy.record_access(page_id);
+        eviction_policy.set_unevictable(page_id);
 
         Ok(PageRefMut {
             _guard,
             page,
             metadata,
+            eviction_policy: &self.eviction_policy,
         })
     }
 
@@ -328,25 +350,16 @@ impl MemCache {
         page_table.map.remove(&page_id);
         page_table.free_list.push_back(idx);
 
+        self.eviction_policy.lock().unwrap().remove(page_id);
+
         Ok(())
     }
 
-    pub fn pick_page_to_evict(&self) -> Option<PageId> {
+    pub fn evict(&self) -> Option<PageId> {
         let page_table = self.page_table.lock().unwrap();
 
         if page_table.free_list.is_empty() {
-            let page_id = self.eviction_policy.should_evict()?;
-            let idx = *page_table.map.get(&page_id).unwrap();
-            let metadata = unsafe { self.get_metadata_ref(idx) };
-
-            if metadata.get_pin_counter() > 0 {
-                return None;
-            }
-            drop(page_table);
-
-            self.eviction_policy.evict();
-
-            Some(page_id)
+            self.eviction_policy.lock().unwrap().evict()
         } else {
             None
         }

@@ -36,7 +36,7 @@ impl PageCache {
         storage.write_page(&page, page_id)?;
 
         // try evict a page if the memory cache is full
-        while let Some(page_id) = self.mem_cache.pick_page_to_evict() {
+        while let Some(page_id) = self.mem_cache.evict() {
             let Ok(page) = self.mem_cache.get_page(page_id) else {
                 continue;
             };
@@ -110,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn test_eviction() {
+    fn test_lru_eviction_policy() {
         let storage = Storage::open(test_path()).unwrap();
         let page_cache = PageCache::new(storage);
 
@@ -123,7 +123,6 @@ mod tests {
         let _ = page_cache.get_page(1).unwrap();
 
         // page 2 should be evicted since it's the oldest non used page
-        assert_eq!(page_cache.mem_cache.pick_page_to_evict(), Some(2));
-        let _ = page_cache.new_page().unwrap();
+        assert_eq!(page_cache.mem_cache.evict(), Some(2));
     }
 }

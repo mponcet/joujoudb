@@ -1,4 +1,5 @@
 mod lru;
+// mod lruk;
 mod memcache;
 mod pagecache;
 
@@ -7,9 +8,11 @@ use crate::page::PageId;
 pub const DEFAULT_PAGE_CACHE_SIZE: usize = 10;
 
 pub trait EvictionPolicy: Send + Sync {
-    fn record_access(&self, page_id: PageId);
-    fn evict(&self);
-    fn should_evict(&self) -> Option<PageId>;
+    fn record_access(&mut self, page_id: PageId);
+    fn evict(&mut self) -> Option<PageId>;
+    fn set_evictable(&mut self, page_id: PageId);
+    fn set_unevictable(&mut self, page_id: PageId);
+    fn remove(&mut self, page_id: PageId);
 }
 
 pub use memcache::{PageRef, PageRefMut};

@@ -25,7 +25,7 @@ impl Page {
 }
 
 pub struct PageMetadata {
-    page_id: PageId,
+    pub page_id: PageId,
     dirty: bool,
     counter: AtomicUsize,
 }
