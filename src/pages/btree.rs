@@ -1,5 +1,5 @@
-use crate::heappage::HeapPageSlotId;
-use crate::page::{PAGE_SIZE, PageId};
+use crate::pages::HeapPageSlotId;
+use crate::pages::{PAGE_SIZE, PageId};
 
 use zerocopy_derive::*;
 

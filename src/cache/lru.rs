@@ -1,5 +1,5 @@
 use crate::cache::EvictionPolicy;
-use crate::page::PageId;
+use crate::pages::PageId;
 
 use std::collections::HashMap;
 

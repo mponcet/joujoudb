@@ -1,4 +1,4 @@
-use crate::page::{PAGE_SIZE, Page, PageId};
+use crate::pages::{PAGE_SIZE, Page, PageId};
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -71,7 +71,7 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::heappage::HeapPage;
+    use crate::pages::HeapPage;
     use crate::tuple::Tuple;
 
     use std::path::PathBuf;

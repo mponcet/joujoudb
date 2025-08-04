@@ -3,7 +3,7 @@ mod lru;
 mod memcache;
 mod pagecache;
 
-use crate::page::PageId;
+use crate::pages::PageId;
 
 pub const DEFAULT_PAGE_CACHE_SIZE: usize = 10;
 

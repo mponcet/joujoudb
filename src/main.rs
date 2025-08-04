@@ -1,12 +1,10 @@
-mod btree;
 mod cache;
-mod heappage;
-mod page;
+mod pages;
 mod storage;
 mod tuple;
 
 use cache::PageCache;
-use heappage::HeapPage;
+use pages::HeapPage;
 use tuple::Tuple;
 
 use storage::Storage;

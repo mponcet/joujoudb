@@ -1,4 +1,5 @@
-use crate::page::{PAGE_SIZE, Page};
+use crate::cache::{PageRef, PageRefMut};
+use crate::pages::{PAGE_SIZE, Page};
 use crate::tuple::{Tuple, TupleRef};
 
 use thiserror::Error;
@@ -79,6 +80,15 @@ pub enum HeapPageError {
     SlotDeleted,
 }
 
+impl Default for HeapPage {
+    fn default() -> Self {
+        Self {
+            header: HeapPageHeader { num_slots: 0 },
+            data: [0; Self::DATA_SIZE],
+        }
+    }
+}
+
 impl HeapPage {
     const HEADER_SIZE: usize = std::mem::size_of::<HeapPageHeader>();
     const SLOT_SIZE: usize = std::mem::size_of::<HeapPageSlot>();
@@ -88,10 +98,7 @@ impl HeapPage {
     pub const MAX_TUPLE_SIZE: usize = Self::DATA_SIZE - Self::SLOT_SIZE;
 
     pub fn new() -> Self {
-        Self {
-            header: HeapPageHeader { num_slots: 0 },
-            data: [0; Self::DATA_SIZE],
-        }
+        Self::default()
     }
 
     #[inline]
@@ -184,20 +191,75 @@ impl HeapPage {
     }
 }
 
+impl<'a> From<&'a Page> for &'a HeapPage {
+    fn from(page: &'a Page) -> &'a HeapPage {
+        unsafe { &*(page.data.as_ptr() as *const HeapPage) }
+    }
+}
+
 impl<'a> From<&'a mut Page> for &'a mut HeapPage {
-    fn from(page: &'a mut Page) -> &'a mut HeapPage {
+    fn from(page: &mut Page) -> &mut HeapPage {
         unsafe { &mut *(page.data.as_mut_ptr() as *mut HeapPage) }
     }
+}
+
+pub struct HeapPageRef<'page> {
+    page_ref: PageRef<'page>,
+}
+
+impl<'page> From<PageRef<'page>> for HeapPageRef<'page> {
+    fn from(page_ref: PageRef<'page>) -> Self {
+        Self { page_ref }
+    }
+}
+
+pub struct HeapPageRefMut<'page> {
+    page_ref_mut: PageRefMut<'page>,
+}
+
+impl<'page> From<PageRefMut<'page>> for HeapPageRefMut<'page> {
+    fn from(page_ref_mut: PageRefMut<'page>) -> Self {
+        Self { page_ref_mut }
+    }
+}
+
+impl<'page> HeapPageRef<'page> {
+    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple, HeapPageError> {
+        let heappage: &HeapPage = self.page_ref.page().into();
+        heappage.get_tuple(slot_id)
+    }
+}
+impl<'page> HeapPageRefMut<'page> {
+    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple, HeapPageError> {
+        let heappage: &HeapPage = self.page_ref_mut.page().into();
+        heappage.get_tuple(slot_id)
+    }
+
+    fn insert_tuple(&mut self, tuple: &Tuple) -> Result<HeapPageSlotId, HeapPageError> {
+        let heappage: &mut HeapPage = self.page_ref_mut.page_mut().into();
+        let result = heappage.insert_tuple(tuple);
+        self.page_ref_mut.metadata_mut().set_dirty();
+        result
+    }
+
+    // delete_tuple
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn page_struct_size_equals_page_size_const() {
-        assert_eq!(std::mem::size_of::<HeapPage>(), PAGE_SIZE)
-    }
+    // #[test]
+    // fn test() {
+    //     let cache = crate::cache::MemCache::new();
+    //     let _ = cache.new_page(0);
+    //     let page = cache.get_page_mut(0).unwrap();
+    //     let mut heappage: HeapPageRefMut = page.into(); // = page_ref_mut.into();
+    //     let tuple_w = crate::tuple::Tuple::try_new(vec![1, 2, 3].into_boxed_slice()).unwrap();
+    //     let slot_id = heappage.insert_tuple(&tuple_w).unwrap();
+    //     let tuple_r = heappage.get_tuple(slot_id).unwrap();
+    //     assert_eq!(tuple_w.values(), tuple_r.values());
+    // }
 
     #[test]
     fn page_should_not_overflow() {

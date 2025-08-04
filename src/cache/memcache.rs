@@ -1,7 +1,7 @@
 use crate::cache::DEFAULT_PAGE_CACHE_SIZE;
 use crate::cache::EvictionPolicy;
 use crate::cache::lru::LRU;
-use crate::page::{Page, PageId, PageMetadata};
+use crate::pages::{Page, PageId, PageMetadata};
 
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, VecDeque};
