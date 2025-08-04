@@ -235,7 +235,7 @@ impl MemCache {
         })
     }
 
-    pub fn get_page_mut(&self, page_id: usize) -> Result<PageRefMut<'_>, MemCacheError> {
+    pub fn get_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, MemCacheError> {
         let page_table = self.page_table.lock().unwrap();
         let idx = *page_table
             .map

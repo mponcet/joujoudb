@@ -5,7 +5,7 @@ use thiserror::Error;
 use zerocopy::*;
 use zerocopy_derive::*;
 
-type HeapPageSlotId = u16;
+pub type HeapPageSlotId = u16;
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]

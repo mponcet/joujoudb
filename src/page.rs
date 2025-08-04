@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub const PAGE_SIZE: usize = 4096;
 
-pub type PageId = usize;
+pub type PageId = u32;
 
 /// the actual data read from/written to disk
 #[derive(Copy, Clone)]

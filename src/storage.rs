@@ -32,7 +32,7 @@ impl Storage {
     }
 
     pub fn read_page(&mut self, page_id: PageId) -> Result<Page, StorageError> {
-        let offset = (page_id * PAGE_SIZE) as u64;
+        let offset = (page_id * PAGE_SIZE as u32) as u64;
 
         let mut page = Page::new();
         self.file
@@ -43,7 +43,7 @@ impl Storage {
     }
 
     pub fn write_page(&mut self, page: &Page, page_id: PageId) -> Result<(), StorageError> {
-        let offset = (page_id * PAGE_SIZE) as u64;
+        let offset = (page_id * PAGE_SIZE as u32) as u64;
 
         self.file
             .write_all_at(page.data.as_slice(), offset)
@@ -64,7 +64,7 @@ impl Storage {
     // this information will be later stored in a metadata page
     // at the beginning of the file
     pub fn last_page_id(&mut self) -> PageId {
-        self.file.metadata().unwrap().len() as PageId / PAGE_SIZE
+        (self.file.metadata().unwrap().len() / PAGE_SIZE as u64) as u32
     }
 }
 
