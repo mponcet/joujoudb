@@ -1,4 +1,5 @@
 mod cache;
+mod indexes;
 mod pages;
 mod storage;
 mod tuple;
