@@ -265,7 +265,7 @@ impl MemCache {
         &self,
         page_id: PageId,
         page_data: Option<&Page>,
-    ) -> Result<PageRef, MemCacheError> {
+    ) -> Result<PageRef<'_>, MemCacheError> {
         let mut page_table = self.page_table.lock().unwrap();
 
         #[cfg(not(test))]
@@ -302,7 +302,7 @@ impl MemCache {
         &self,
         page_id: PageId,
         page_data: Option<&Page>,
-    ) -> Result<PageRefMut, MemCacheError> {
+    ) -> Result<PageRefMut<'_>, MemCacheError> {
         let mut page_table = self.page_table.lock().unwrap();
 
         #[cfg(not(test))]

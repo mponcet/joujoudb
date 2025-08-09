@@ -28,7 +28,7 @@ impl PageCache {
         }
     }
 
-    pub fn new_page(&self) -> Result<PageRefMut, PageCacheError> {
+    pub fn new_page(&self) -> Result<PageRefMut<'_>, PageCacheError> {
         let mut storage = self.storage.lock().unwrap();
         let page_id = storage.last_page_id();
         let page = Page::new();
@@ -56,7 +56,7 @@ impl PageCache {
             .map_err(PageCacheError::MemCache)
     }
 
-    pub fn get_page(&self, page_id: PageId) -> Result<PageRef, PageCacheError> {
+    pub fn get_page(&self, page_id: PageId) -> Result<PageRef<'_>, PageCacheError> {
         if let Ok(page) = self.mem_cache.get_page(page_id) {
             Ok(page)
         } else {
@@ -73,7 +73,7 @@ impl PageCache {
         }
     }
 
-    pub fn get_page_mut(&self, page_id: PageId) -> Result<PageRefMut, PageCacheError> {
+    pub fn get_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, PageCacheError> {
         if let Ok(page) = self.mem_cache.get_page_mut(page_id) {
             Ok(page)
         } else {

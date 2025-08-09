@@ -177,7 +177,7 @@ impl HeapPage {
         Ok(())
     }
 
-    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple, HeapPageError> {
+    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple<'_>, HeapPageError> {
         let slot = self.get_slot(slot_id).ok_or(HeapPageError::SlotNotFound)?;
         let (idx, len) = (slot.offset as usize, slot.len as usize);
 
@@ -224,13 +224,13 @@ impl<'page> From<PageRefMut<'page>> for HeapPageRefMut<'page> {
 }
 
 impl<'page> HeapPageRef<'page> {
-    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple, HeapPageError> {
+    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple<'_>, HeapPageError> {
         let heappage: &HeapPage = self.page_ref.page().into();
         heappage.get_tuple(slot_id)
     }
 }
 impl<'page> HeapPageRefMut<'page> {
-    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple, HeapPageError> {
+    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple<'_>, HeapPageError> {
         let heappage: &HeapPage = self.page_ref_mut.page().into();
         heappage.get_tuple(slot_id)
     }
