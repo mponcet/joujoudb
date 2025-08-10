@@ -111,38 +111,26 @@ impl BTree {
 
     pub fn insert(&mut self, key: Key, record_id: RecordId) {
         // initialize root
-        if !self.init {
+        let mut root_page_ref = if !self.init {
             let mut root_page_ref = self
                 .page_cache
                 .get_page_mut(self.root_page_id)
                 .expect("TODO");
-            let root_page: &mut BTreeInnerPage = root_page_ref.page_mut().into();
-
-            let mut left_page_ref = self.page_cache.new_page().expect("TODO");
-            let left_page: &mut BTreeLeafPage = left_page_ref.page_mut().into();
-            left_page.init();
-
-            let mut right_page_ref = self.page_cache.new_page().expect("TODO");
-            let right_page: &mut BTreeLeafPage = right_page_ref.page_mut().into();
-            right_page.init();
-
-            root_page.init(
-                key,
-                left_page_ref.metadata().page_id,
-                right_page_ref.metadata().page_id,
-            );
+            let root_page: &mut BTreeLeafPage = root_page_ref.page_mut().into();
+            root_page.init();
             root_page_ref.metadata_mut().set_dirty();
-            left_page_ref.metadata_mut().set_dirty();
-            right_page_ref.metadata_mut().set_dirty();
             self.init = true;
-        }
+            root_page_ref
+        } else {
+            self.page_cache
+                .get_page_mut(self.root_page_id)
+                .expect("TODO")
+        };
 
-        let root_page_ref = self
-            .page_cache
-            .get_page_mut(self.root_page_id)
-            .expect("TODO");
-
-        let result = self.insert_inner_r(root_page_ref, key, record_id);
+        let result = match btree_get_page_type(root_page_ref.page()) {
+            BTreePageType::Inner => self.insert_inner_r(root_page_ref, key, record_id),
+            BTreePageType::Leaf => self.insert_leaf(root_page_ref, key, record_id),
+        };
 
         if let Some((split_key, rhs_page_id)) = result {
             let mut new_root_page_ref = self.page_cache.new_page().expect("TODO");
