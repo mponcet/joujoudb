@@ -1,5 +1,4 @@
-use crate::pages::{HeapPageSlotId, Page};
-use crate::pages::{PAGE_SIZE, PageId};
+use crate::pages::{HeapPageSlotId, PAGE_INVALID, PAGE_SIZE, Page, PageId};
 
 use thiserror::Error;
 use zerocopy::FromBytes;
@@ -119,7 +118,8 @@ impl BTreeLeafPage {
         self.header = BTreePageHeader {
             page_type: 1,
             num_keys: 0,
-        }
+        };
+        self.next = PAGE_INVALID;
     }
 
     pub fn insert(&mut self, key: Key, value: RecordId) -> Option<SplitLeaf<'_>> {

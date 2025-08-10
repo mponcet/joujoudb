@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub const PAGE_SIZE: usize = 4096;
+pub const PAGE_INVALID: PageId = 0;
 
 pub type PageId = u32;
 
