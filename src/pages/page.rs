@@ -6,7 +6,6 @@ pub const PAGE_INVALID: PageId = 0;
 pub type PageId = u32;
 
 /// the actual data read from/written to disk
-#[derive(Copy, Clone)]
 pub struct Page {
     pub data: [u8; PAGE_SIZE],
 }

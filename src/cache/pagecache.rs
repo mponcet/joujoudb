@@ -52,7 +52,7 @@ impl PageCache {
         drop(storage);
 
         self.mem_cache
-            .new_page_mut(page_id, None)
+            .new_page_mut(page_id)
             .map_err(PageCacheError::MemCache)
     }
 
@@ -60,15 +60,20 @@ impl PageCache {
         if let Ok(page) = self.mem_cache.get_page(page_id) {
             Ok(page)
         } else {
-            let page = self
-                .storage
+            let mut new_page_ref = self
+                .mem_cache
+                .new_page_mut(page_id)
+                .map_err(PageCacheError::MemCache)?;
+            self.storage
                 .lock()
                 .unwrap()
-                .read_page(page_id)
+                .read_page(page_id, new_page_ref.page_mut())
                 .map_err(PageCacheError::Storage)?;
 
+            // FIXME: downgrade write lock to read lock
+            drop(new_page_ref);
             self.mem_cache
-                .new_page(page_id, Some(&page))
+                .get_page(page_id)
                 .map_err(PageCacheError::MemCache)
         }
     }
@@ -77,16 +82,17 @@ impl PageCache {
         if let Ok(page) = self.mem_cache.get_page_mut(page_id) {
             Ok(page)
         } else {
-            let page = self
-                .storage
+            let mut new_page_ref = self
+                .mem_cache
+                .new_page_mut(page_id)
+                .map_err(PageCacheError::MemCache)?;
+            self.storage
                 .lock()
                 .unwrap()
-                .read_page(page_id)
+                .read_page(page_id, new_page_ref.page_mut())
                 .map_err(PageCacheError::Storage)?;
 
-            self.mem_cache
-                .new_page_mut(page_id, Some(&page))
-                .map_err(PageCacheError::MemCache)
+            Ok(new_page_ref)
         }
     }
 }

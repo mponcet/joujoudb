@@ -295,11 +295,7 @@ impl MemCache {
         })
     }
 
-    pub fn new_page(
-        &self,
-        page_id: PageId,
-        page_data: Option<&Page>,
-    ) -> Result<PageRef<'_>, MemCacheError> {
+    pub fn new_page(&self, page_id: PageId) -> Result<PageRef<'_>, MemCacheError> {
         let mut page_table = self.page_table.lock().unwrap();
 
         #[cfg(not(test))]
@@ -314,7 +310,6 @@ impl MemCache {
         let page = unsafe { self.get_page_ref_mut(idx) };
         let metadata = unsafe { self.get_metadata_ref_mut(idx) };
         let latch = &self.pages_latch[idx].latch;
-        *page = *page_data.unwrap_or(&Page::new());
         *metadata = PageMetadata::new(page_id);
         let _guard = latch.read().unwrap();
         let old_counter = metadata.pin();
@@ -332,11 +327,7 @@ impl MemCache {
         })
     }
 
-    pub fn new_page_mut(
-        &self,
-        page_id: PageId,
-        page_data: Option<&Page>,
-    ) -> Result<PageRefMut<'_>, MemCacheError> {
+    pub fn new_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, MemCacheError> {
         let mut page_table = self.page_table.lock().unwrap();
 
         #[cfg(not(test))]
@@ -351,7 +342,6 @@ impl MemCache {
         let page = unsafe { self.get_page_ref_mut(idx) };
         let metadata = unsafe { self.get_metadata_ref_mut(idx) };
         let latch = &self.pages_latch[idx].latch;
-        *page = *page_data.unwrap_or(&Page::new());
         *metadata = PageMetadata::new(page_id);
         let _guard = latch.write().unwrap();
         let old_counter = metadata.pin();
@@ -414,7 +404,7 @@ mod tests {
         let cache2 = cache.clone();
         let t1 = std::thread::spawn(move || {
             for page_id in 1..100000 {
-                let _ = cache1.new_page(page_id, None);
+                let _ = cache1.new_page(page_id);
             }
         });
         let t2 = std::thread::spawn(move || {

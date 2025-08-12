@@ -31,15 +31,14 @@ impl Storage {
         Ok(Self { file })
     }
 
-    pub fn read_page(&mut self, page_id: PageId) -> Result<Page, StorageError> {
+    pub fn read_page(&mut self, page_id: PageId, page: &mut Page) -> Result<(), StorageError> {
         let offset = page_id as u64 * PAGE_SIZE as u64;
 
-        let mut page = Page::new();
         self.file
             .read_exact_at(page.data.as_mut_slice(), offset)
             .map_err(StorageError::Io)?;
 
-        Ok(page)
+        Ok(())
     }
 
     pub fn write_page(&mut self, page: &Page, page_id: PageId) -> Result<(), StorageError> {
@@ -83,7 +82,7 @@ mod tests {
 
     #[test]
     fn storage_read_after_write_page() {
-        let mut heapfile = Storage::open(test_path()).unwrap();
+        let mut storage = Storage::open(test_path()).unwrap();
         let page = &mut Page::new();
 
         // write
@@ -91,11 +90,12 @@ mod tests {
         let tuple_w = Tuple::try_new(values).unwrap();
         let heappage: &mut HeapPage = page.into();
         heappage.insert_tuple(&tuple_w).unwrap();
-        heapfile.write_page(page, 0).unwrap();
-        heapfile.flush();
+        storage.write_page(page, 0).unwrap();
+        storage.flush();
 
         // read back
-        let page = &mut heapfile.read_page(0).unwrap();
+        let page = &mut Page::new();
+        storage.read_page(0, page).unwrap();
         // assert_eq!(page.page_id(), 0);
         let heappage: &mut HeapPage = page.into();
         let tuple_r = heappage.get_tuple(0).unwrap();
