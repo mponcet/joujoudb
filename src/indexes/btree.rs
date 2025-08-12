@@ -133,18 +133,18 @@ impl BTree {
         }
     }
 
-    fn delete_r(&self, mut page_ref: PageRefMut<'_>, key: Key) -> Result<(), BTreePageError> {
+    fn delete_r(&self, page_id: PageId, key: Key) -> Result<(), BTreePageError> {
+        let page_ref = self.page_cache.get_page(page_id).expect("TODO");
+
         match btree_get_page_type(page_ref.page()) {
             BTreePageType::Inner => {
-                let inner_page: &mut BTreeInnerPage = page_ref.page_mut().into();
+                let inner_page: &BTreeInnerPage = page_ref.page().into();
                 let children_page_id = inner_page.search(key);
-                let children_page_ref = self
-                    .page_cache
-                    .get_page_mut(children_page_id)
-                    .expect("TODO");
-                self.delete_r(children_page_ref, key)
+                self.delete_r(children_page_id, key)
             }
             BTreePageType::Leaf => {
+                drop(page_ref);
+                let mut page_ref = self.page_cache.get_page_mut(page_id).expect("TODO");
                 let leaf_page: &mut BTreeLeafPage = page_ref.page_mut().into();
                 let result = leaf_page.delete(key);
                 page_ref.metadata_mut().set_dirty();
@@ -154,12 +154,7 @@ impl BTree {
     }
 
     pub fn delete(&mut self, key: Key) -> Result<(), BTreePageError> {
-        let root_page_ref = self
-            .page_cache
-            .get_page_mut(self.root_page_id)
-            .expect("TODO");
-
-        self.delete_r(root_page_ref, key)
+        self.delete_r(self.root_page_id, key)
     }
 }
 
