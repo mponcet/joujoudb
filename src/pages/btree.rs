@@ -269,7 +269,17 @@ impl BTreeInnerPage {
     }
 
     pub fn delete(&mut self, key: Key) -> Result<(), BTreePageError> {
-        todo!()
+        let pos = self
+            .keys()
+            .binary_search(&key)
+            .map_err(|_| BTreePageError::KeyNotFound)?;
+
+        let num_keys = self.header.num_keys as usize;
+        self.keys.copy_within(pos + 1..num_keys - 1, pos);
+        self.pointers.copy_within(pos..num_keys, pos + 1);
+        self.header.num_keys -= 1;
+
+        Ok(())
     }
 }
 

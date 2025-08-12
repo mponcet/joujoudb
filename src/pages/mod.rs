@@ -2,7 +2,7 @@ mod btree;
 mod heappage;
 mod page;
 
-pub use btree::{BTreeInnerPage, BTreeLeafPage, Key, RecordId};
+pub use btree::{BTreeInnerPage, BTreeLeafPage, BTreePageError, Key, RecordId};
 pub use heappage::{HeapPage, HeapPageSlotId};
 pub use page::{PAGE_INVALID, PAGE_SIZE, Page, PageId, PageMetadata};
 
