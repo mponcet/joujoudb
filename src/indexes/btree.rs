@@ -1,5 +1,5 @@
-use crate::cache::{PageCache, PageCacheError, PageRefMut};
-use crate::pages::{BTreePageError, BTreePageType, Key, PageId, RecordId};
+use crate::cache::{PageCache, PageCacheError, PageRef, PageRefMut};
+use crate::pages::{BTreePageError, BTreePageType, Key, PAGE_INVALID, PageId, RecordId};
 use crate::storage::Storage;
 
 use crate::pages::btree_get_page_type;
@@ -20,7 +20,7 @@ pub enum BTreeError {
 }
 
 impl BTree {
-    fn try_new(storage: Storage) -> Result<Self, BTreeError> {
+    pub fn try_new(storage: Storage) -> Result<Self, BTreeError> {
         let page_cache = PageCache::new(storage);
         let mut root_page_ref = page_cache.new_page().map_err(BTreeError::PageCache)?;
         let root_page_id = root_page_ref.metadata().page_id;
@@ -34,14 +34,14 @@ impl BTree {
         })
     }
 
-    fn search(&self, key: Key) -> Option<RecordId> {
+    fn find_leaf_page(&self, key: Key) -> Result<PageRef<'_>, BTreeError> {
         let mut page_id = self.root_page_id;
 
         loop {
             let page_ref = self
                 .page_cache
                 .get_page(page_id)
-                .expect("btree dead pointer");
+                .map_err(BTreeError::PageCache)?;
 
             match btree_get_page_type(page_ref.page()) {
                 BTreePageType::Inner => {
@@ -49,11 +49,18 @@ impl BTree {
                     page_id = inner_page.search(key);
                 }
                 BTreePageType::Leaf => {
-                    let leaf_page = page_ref.btree_leaf_page();
-                    return leaf_page.search(key);
+                    return Ok(page_ref);
                 }
             }
         }
+    }
+
+    pub fn search(&self, key: Key) -> Option<RecordId> {
+        // For convinience we return an Option.
+        // We should log errors instead of unwraping.
+        let page_ref = self.find_leaf_page(key).unwrap();
+        let leaf_page = page_ref.btree_leaf_page();
+        leaf_page.search(key)
     }
 
     fn insert_inner_r(
@@ -170,6 +177,55 @@ impl BTree {
 
     pub fn delete(&mut self, key: Key) -> Result<(), BTreeError> {
         self.delete_r(self.root_page_id, key)
+    }
+
+    pub fn iter(&self, start: Key) -> Result<BTreeRangeIterator<'_>, BTreeError> {
+        let page_ref = self.find_leaf_page(start)?;
+        let leaf_page = page_ref.btree_leaf_page();
+        let pos = leaf_page.find_key_index(start).expect("TODO");
+
+        Ok(BTreeRangeIterator {
+            start,
+            pos,
+            btree: self,
+            page_ref,
+        })
+    }
+}
+
+pub struct BTreeRangeIterator<'btree> {
+    start: Key,
+    pos: usize,
+    btree: &'btree BTree,
+    page_ref: PageRef<'btree>,
+}
+
+impl<'btree> Iterator for BTreeRangeIterator<'btree> {
+    type Item = (Key, RecordId);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let leaf_page = self.page_ref.btree_leaf_page();
+
+        if self.pos >= leaf_page.len() {
+            if leaf_page.next_page_id() == PAGE_INVALID {
+                return None;
+            }
+
+            self.page_ref = self
+                .btree
+                .page_cache
+                .get_page(leaf_page.next_page_id())
+                .map_err(|_| todo!("log errors"))
+                .ok()?;
+
+            self.pos = 0;
+        }
+
+        let leaf_page = self.page_ref.btree_leaf_page();
+        let (key, record_id) = (leaf_page.key_at(self.pos), leaf_page.value_at(self.pos));
+        self.pos += 1;
+
+        Some((key, record_id))
     }
 }
 
@@ -368,5 +424,19 @@ mod tests {
         for key in 0..1000 {
             assert!(btree.search(key).is_none());
         }
+    }
+
+    #[test]
+    fn iterator() {
+        let mut btree = create_btree();
+
+        for key in 0..1000 {
+            btree.insert(key, RecordId::new(0, 0)).unwrap();
+        }
+        assert!(btree.search(0).is_some());
+        assert!(btree.search(999).is_some());
+        assert_eq!(btree.iter(0).unwrap().count(), 1000);
+        let keys = btree.iter(0).unwrap().map(|(key, _)| key);
+        assert!(keys.eq(0..1000));
     }
 }

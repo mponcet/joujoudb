@@ -94,9 +94,24 @@ impl SplitLeaf<'_> {
 
 impl BTreeLeafPage {
     #[inline]
+    pub fn len(&self) -> usize {
+        self.header.num_keys as usize
+    }
+
+    #[inline]
     pub fn keys(&self) -> &[Key] {
         let num_keys = self.header.num_keys as usize;
         &self.keys[..num_keys]
+    }
+
+    #[inline]
+    pub fn key_at(&self, pos: usize) -> Key {
+        self.keys[pos]
+    }
+
+    #[inline]
+    pub fn value_at(&self, pos: usize) -> RecordId {
+        self.values[pos]
     }
 
     #[inline]
@@ -109,8 +124,12 @@ impl BTreeLeafPage {
         self.next = page_id;
     }
 
+    pub fn find_key_index(&self, key: Key) -> Option<usize> {
+        self.keys().binary_search(&key).ok()
+    }
+
     pub fn search(&self, key: Key) -> Option<RecordId> {
-        let pos = self.keys().binary_search(&key).ok()?;
+        let pos = self.find_key_index(key)?;
         Some(self.values[pos])
     }
 
