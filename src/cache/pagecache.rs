@@ -114,15 +114,15 @@ mod tests {
         let storage = Storage::open(test_path()).unwrap();
         let page_cache = PageCache::new(storage);
 
-        // fill cache
-        for _ in 0..DEFAULT_PAGE_CACHE_SIZE {
+        // Fill cache. Page 0 is reserved.
+        for _ in 1..DEFAULT_PAGE_CACHE_SIZE {
             page_cache.new_page().unwrap();
         }
 
-        let _ = page_cache.get_page(0).unwrap();
         let _ = page_cache.get_page(1).unwrap();
+        let _ = page_cache.get_page(2).unwrap();
 
-        // page 2 should be evicted since it's the oldest non used page
-        assert_eq!(page_cache.mem_cache.evict(), Some(2));
+        // Page 3 should be evicted since it's the oldest non used page.
+        assert_eq!(page_cache.mem_cache.evict(), Some(3));
     }
 }
