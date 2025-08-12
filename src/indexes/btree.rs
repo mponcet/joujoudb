@@ -1,35 +1,43 @@
-use crate::cache::{PageCache, PageRefMut};
+use crate::cache::{PageCache, PageCacheError, PageRefMut};
 use crate::pages::{BTreePageError, BTreePageType, Key, PageId, RecordId};
 use crate::storage::Storage;
 
-//FIXME
 use crate::pages::btree_get_page_type;
+
+use thiserror::Error;
 
 struct BTree {
     root_page_id: PageId,
     page_cache: PageCache,
 }
 
+#[derive(Error, Debug)]
+pub enum BTreeError {
+    #[error("error accessing a btree page")]
+    Page(#[from] BTreePageError),
+    #[error("page cache error")]
+    PageCache(#[from] PageCacheError),
+}
+
 impl BTree {
-    fn new(storage: Storage) -> Self {
+    fn try_new(storage: Storage) -> Result<Self, BTreeError> {
         let page_cache = PageCache::new(storage);
-        let mut root_page_ref = page_cache.new_page().expect("TODO");
+        let mut root_page_ref = page_cache.new_page().map_err(BTreeError::PageCache)?;
         let root_page_id = root_page_ref.metadata().page_id;
         let root_page = root_page_ref.btree_leaf_page_mut();
         root_page.init();
         drop(root_page_ref);
 
-        Self {
+        Ok(Self {
             root_page_id,
             page_cache,
-        }
+        })
     }
 
     fn search(&self, key: Key) -> Option<RecordId> {
         let mut page_id = self.root_page_id;
 
         loop {
-            println!("loop");
             let page_ref = self
                 .page_cache
                 .get_page(page_id)
@@ -53,24 +61,25 @@ impl BTree {
         mut inner_page_ref: PageRefMut<'_>,
         key: Key,
         value: RecordId,
-    ) -> Option<(Key, PageId)> {
+    ) -> Result<Option<(Key, PageId)>, BTreeError> {
         let inner_page = inner_page_ref.btree_inner_page_mut();
 
         let children_page_id = inner_page.search(key);
         let children_page_ref = self
             .page_cache
             .get_page_mut(children_page_id)
-            .expect("TODO");
+            .map_err(BTreeError::PageCache)?;
 
         let result = match btree_get_page_type(children_page_ref.page()) {
-            BTreePageType::Inner => self.insert_inner_r(children_page_ref, key, value),
-            BTreePageType::Leaf => self.insert_leaf(children_page_ref, key, value),
+            BTreePageType::Inner => self.insert_inner_r(children_page_ref, key, value)?,
+            BTreePageType::Leaf => self.insert_leaf(children_page_ref, key, value)?,
         };
 
         if let Some((split_key, rhs_page_id)) = result
             && let Some(mut split) = inner_page.insert(split_key, rhs_page_id)
         {
-            let mut rhs_inner_page_ref = self.page_cache.new_page().expect("TODO");
+            let mut rhs_inner_page_ref =
+                self.page_cache.new_page().map_err(BTreeError::PageCache)?;
             let rhs_inner_page_id = rhs_inner_page_ref.metadata().page_id;
             let rhs_inner_page = rhs_inner_page_ref.btree_inner_page_mut();
             rhs_inner_page.init_header();
@@ -79,10 +88,10 @@ impl BTree {
             inner_page_ref.metadata_mut().set_dirty();
             rhs_inner_page_ref.metadata_mut().set_dirty();
 
-            return Some((split_key, rhs_inner_page_id));
+            Ok(Some((split_key, rhs_inner_page_id)))
+        } else {
+            Ok(None)
         }
-
-        None
     }
 
     fn insert_leaf(
@@ -90,10 +99,10 @@ impl BTree {
         mut lhs_page_ref: PageRefMut<'_>,
         key: Key,
         value: RecordId,
-    ) -> Option<(Key, PageId)> {
+    ) -> Result<Option<(Key, PageId)>, BTreeError> {
         let lhs = lhs_page_ref.btree_leaf_page_mut();
         if let Some(mut split) = lhs.insert(key, value) {
-            let mut rhs_page_ref = self.page_cache.new_page().expect("TODO");
+            let mut rhs_page_ref = self.page_cache.new_page().map_err(BTreeError::PageCache)?;
             let rhs = rhs_page_ref.btree_leaf_page_mut();
             rhs.init();
             let split_key = split.split(rhs, key, value);
@@ -103,36 +112,40 @@ impl BTree {
             lhs_page_ref.metadata_mut().set_dirty();
             rhs_page_ref.metadata_mut().set_dirty();
 
-            println!("split_key={split_key}");
-
-            Some((split_key, rhs_page_id))
+            Ok(Some((split_key, rhs_page_id)))
         } else {
-            None
+            Ok(None)
         }
     }
 
-    pub fn insert(&mut self, key: Key, record_id: RecordId) {
+    pub fn insert(&mut self, key: Key, record_id: RecordId) -> Result<(), BTreeError> {
         let root_page_ref = self
             .page_cache
             .get_page_mut(self.root_page_id)
-            .expect("TODO");
+            .map_err(BTreeError::PageCache)?;
 
         let result = match btree_get_page_type(root_page_ref.page()) {
-            BTreePageType::Inner => self.insert_inner_r(root_page_ref, key, record_id),
-            BTreePageType::Leaf => self.insert_leaf(root_page_ref, key, record_id),
+            BTreePageType::Inner => self.insert_inner_r(root_page_ref, key, record_id)?,
+            BTreePageType::Leaf => self.insert_leaf(root_page_ref, key, record_id)?,
         };
 
         if let Some((split_key, rhs_page_id)) = result {
-            let mut new_root_page_ref = self.page_cache.new_page().expect("TODO");
+            let mut new_root_page_ref =
+                self.page_cache.new_page().map_err(BTreeError::PageCache)?;
             let new_root_page = new_root_page_ref.btree_inner_page_mut();
             new_root_page.init(split_key, self.root_page_id, rhs_page_id);
             new_root_page_ref.metadata_mut().set_dirty();
             self.root_page_id = new_root_page_ref.metadata().page_id;
         }
+
+        Ok(())
     }
 
-    fn delete_r(&self, page_id: PageId, key: Key) -> Result<(), BTreePageError> {
-        let page_ref = self.page_cache.get_page(page_id).expect("TODO");
+    fn delete_r(&self, page_id: PageId, key: Key) -> Result<(), BTreeError> {
+        let page_ref = self
+            .page_cache
+            .get_page(page_id)
+            .map_err(BTreeError::PageCache)?;
 
         match btree_get_page_type(page_ref.page()) {
             BTreePageType::Inner => {
@@ -143,16 +156,19 @@ impl BTree {
             BTreePageType::Leaf => {
                 drop(page_ref);
                 // reacquire a page lock, but mutable
-                let mut page_ref = self.page_cache.get_page_mut(page_id).expect("TODO");
+                let mut page_ref = self
+                    .page_cache
+                    .get_page_mut(page_id)
+                    .map_err(BTreeError::PageCache)?;
                 let leaf_page = page_ref.btree_leaf_page_mut();
-                let result = leaf_page.delete(key);
+                let result = leaf_page.delete(key).map_err(BTreeError::Page);
                 page_ref.metadata_mut().set_dirty();
                 result
             }
         }
     }
 
-    pub fn delete(&mut self, key: Key) -> Result<(), BTreePageError> {
+    pub fn delete(&mut self, key: Key) -> Result<(), BTreeError> {
         self.delete_r(self.root_page_id, key)
     }
 }
@@ -178,7 +194,7 @@ mod tests {
 
     fn create_btree() -> BTree {
         let storage = Storage::open(test_path()).unwrap();
-        BTree::new(storage)
+        BTree::try_new(storage).unwrap()
     }
 
     fn print_btree(btree: &BTree) {
@@ -228,7 +244,7 @@ mod tests {
         let mut btree = create_btree();
 
         for key in 0..NR_KEYS {
-            btree.insert(key, RecordId::new(0, 0));
+            btree.insert(key, RecordId::new(0, 0)).unwrap();
         }
 
         for key in 0..NR_KEYS {
@@ -241,7 +257,7 @@ mod tests {
         let mut btree = create_btree();
 
         for key in (0..NR_KEYS).rev() {
-            btree.insert(key, RecordId::new(0, 0));
+            btree.insert(key, RecordId::new(0, 0)).unwrap();
         }
 
         for key in (0..NR_KEYS).rev() {
@@ -255,7 +271,7 @@ mod tests {
 
         for key in 0..NR_KEYS {
             let key = (if key % 2 == 0 { key } else { key * 1000 }) as Key;
-            btree.insert(key, RecordId::new(0, 0));
+            btree.insert(key, RecordId::new(0, 0)).unwrap();
         }
         for key in 0..NR_KEYS {
             let key = (if key % 2 == 0 { key } else { key * 1000 }) as Key;
@@ -267,17 +283,16 @@ mod tests {
     #[should_panic]
     fn insert_duplicate_key() {
         let mut btree = create_btree();
-        btree.insert(10, RecordId::new(0, 0));
-        btree.insert(10, RecordId::new(0, 0));
+        btree.insert(10, RecordId::new(0, 0)).unwrap();
+        btree.insert(10, RecordId::new(0, 0)).unwrap();
     }
 
     #[test]
     fn search() {
-        let storage = Storage::open(test_path()).unwrap();
-        let mut btree = BTree::new(storage);
+        let mut btree = create_btree();
 
         for key in 0..NR_KEYS {
-            btree.insert(key * 2, RecordId::new(0, 0));
+            btree.insert(key * 2, RecordId::new(0, 0)).unwrap();
         }
         assert!(btree.search(10).is_some());
         assert!(btree.search(9).is_none());
@@ -293,8 +308,8 @@ mod tests {
     #[test]
     fn search_nonexistent_key() {
         let mut btree = create_btree();
-        btree.insert(10, RecordId::new(0, 0));
-        btree.insert(20, RecordId::new(0, 0));
+        btree.insert(10, RecordId::new(0, 0)).unwrap();
+        btree.insert(20, RecordId::new(0, 0)).unwrap();
 
         // Search for keys that don't exist
         assert!(btree.search(1).is_none());
@@ -305,9 +320,9 @@ mod tests {
     #[test]
     fn delete_existing_key() {
         let mut btree = create_btree();
-        btree.insert(10, RecordId::new(0, 0));
-        btree.insert(20, RecordId::new(0, 0));
-        btree.insert(30, RecordId::new(0, 0));
+        btree.insert(10, RecordId::new(0, 0)).unwrap();
+        btree.insert(20, RecordId::new(0, 0)).unwrap();
+        btree.insert(30, RecordId::new(0, 0)).unwrap();
 
         let _ = btree.delete(20);
 
@@ -319,9 +334,12 @@ mod tests {
     #[test]
     fn delete_nonexistent_key() {
         let mut btree = create_btree();
-        btree.insert(10, RecordId::new(0, 0));
+        btree.insert(10, RecordId::new(0, 0)).unwrap();
 
-        assert!(matches!(btree.delete(20), Err(BTreePageError::KeyNotFound)));
+        assert!(matches!(
+            btree.delete(20),
+            Err(BTreeError::Page(BTreePageError::KeyNotFound))
+        ));
         assert!(btree.search(10).is_some());
     }
 
@@ -329,7 +347,10 @@ mod tests {
     fn delete_from_empty_tree() {
         let mut btree = create_btree();
 
-        assert!(matches!(btree.delete(20), Err(BTreePageError::KeyNotFound)));
+        assert!(matches!(
+            btree.delete(20),
+            Err(BTreeError::Page(BTreePageError::KeyNotFound))
+        ));
     }
 
     #[test]
@@ -337,7 +358,7 @@ mod tests {
         let mut btree = create_btree();
 
         for key in 0..1000 {
-            btree.insert(key, RecordId::new(0, 0));
+            btree.insert(key, RecordId::new(0, 0)).unwrap();
         }
 
         for key in 0..1000 {
