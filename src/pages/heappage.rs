@@ -1,4 +1,3 @@
-use crate::cache::{PageRef, PageRefMut};
 use crate::pages::{PAGE_SIZE, Page};
 use crate::tuple::{Tuple, TupleRef};
 
@@ -201,48 +200,6 @@ impl<'a> From<&'a mut Page> for &'a mut HeapPage {
     fn from(page: &mut Page) -> &mut HeapPage {
         unsafe { &mut *(page.data.as_mut_ptr() as *mut HeapPage) }
     }
-}
-
-pub struct HeapPageRef<'page> {
-    page_ref: PageRef<'page>,
-}
-
-impl<'page> From<PageRef<'page>> for HeapPageRef<'page> {
-    fn from(page_ref: PageRef<'page>) -> Self {
-        Self { page_ref }
-    }
-}
-
-pub struct HeapPageRefMut<'page> {
-    page_ref_mut: PageRefMut<'page>,
-}
-
-impl<'page> From<PageRefMut<'page>> for HeapPageRefMut<'page> {
-    fn from(page_ref_mut: PageRefMut<'page>) -> Self {
-        Self { page_ref_mut }
-    }
-}
-
-impl<'page> HeapPageRef<'page> {
-    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple<'_>, HeapPageError> {
-        let heappage: &HeapPage = self.page_ref.page().into();
-        heappage.get_tuple(slot_id)
-    }
-}
-impl<'page> HeapPageRefMut<'page> {
-    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple<'_>, HeapPageError> {
-        let heappage: &HeapPage = self.page_ref_mut.page().into();
-        heappage.get_tuple(slot_id)
-    }
-
-    fn insert_tuple(&mut self, tuple: &Tuple) -> Result<HeapPageSlotId, HeapPageError> {
-        let heappage: &mut HeapPage = self.page_ref_mut.page_mut().into();
-        let result = heappage.insert_tuple(tuple);
-        self.page_ref_mut.metadata_mut().set_dirty();
-        result
-    }
-
-    // delete_tuple
 }
 
 #[cfg(test)]

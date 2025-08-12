@@ -1,7 +1,9 @@
 use crate::cache::DEFAULT_PAGE_CACHE_SIZE;
 use crate::cache::EvictionPolicy;
 use crate::cache::lru::LRU;
-use crate::pages::{Page, PageId, PageMetadata};
+use crate::pages::BTreeInnerPage;
+use crate::pages::BTreeLeafPage;
+use crate::pages::{HeapPage, Page, PageId, PageMetadata};
 
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, VecDeque};
@@ -83,9 +85,17 @@ impl PageRef<'_> {
         self.metadata
     }
 
-    // pub fn metadata_mut(&mut self) -> &mut PageMetadata {
-    //     self.metadata
-    // }
+    pub fn heap_page(&self) -> &HeapPage {
+        self.page().into()
+    }
+
+    pub fn btree_inner_page(&self) -> &BTreeInnerPage {
+        self.page().into()
+    }
+
+    pub fn btree_leaf_page(&self) -> &BTreeLeafPage {
+        self.page().into()
+    }
 }
 
 pub struct PageRefMut<'page> {
@@ -110,6 +120,30 @@ impl PageRefMut<'_> {
 
     pub fn metadata_mut(&mut self) -> &mut PageMetadata {
         self.metadata
+    }
+
+    pub fn heap_page(&self) -> &HeapPage {
+        self.page().into()
+    }
+
+    pub fn heap_page_mut(&mut self) -> &mut HeapPage {
+        self.page_mut().into()
+    }
+
+    pub fn btree_inner_page(&self) -> &BTreeInnerPage {
+        self.page().into()
+    }
+
+    pub fn btree_inner_page_mut(&mut self) -> &mut BTreeInnerPage {
+        self.page_mut().into()
+    }
+
+    pub fn btree_leaf_page(&self) -> &BTreeLeafPage {
+        self.page().into()
+    }
+
+    pub fn btree_leaf_page_mut(&mut self) -> &mut BTreeLeafPage {
+        self.page_mut().into()
     }
 }
 

@@ -1,7 +1,5 @@
 use crate::cache::{PageCache, PageRefMut};
-use crate::pages::{
-    BTreeInnerPage, BTreeLeafPage, BTreePageError, BTreePageType, Key, PageId, RecordId,
-};
+use crate::pages::{BTreePageError, BTreePageType, Key, PageId, RecordId};
 use crate::storage::Storage;
 
 //FIXME
@@ -17,7 +15,7 @@ impl BTree {
         let page_cache = PageCache::new(storage);
         let mut root_page_ref = page_cache.new_page().expect("TODO");
         let root_page_id = root_page_ref.metadata().page_id;
-        let root_page: &mut BTreeLeafPage = root_page_ref.page_mut().into();
+        let root_page = root_page_ref.btree_leaf_page_mut();
         root_page.init();
         drop(root_page_ref);
 
@@ -39,11 +37,11 @@ impl BTree {
 
             match btree_get_page_type(page_ref.page()) {
                 BTreePageType::Inner => {
-                    let inner_page: &BTreeInnerPage = page_ref.page().into();
+                    let inner_page = page_ref.btree_inner_page();
                     page_id = inner_page.search(key);
                 }
                 BTreePageType::Leaf => {
-                    let leaf_page: &BTreeLeafPage = page_ref.page().into();
+                    let leaf_page = page_ref.btree_leaf_page();
                     return leaf_page.search(key);
                 }
             }
@@ -56,7 +54,7 @@ impl BTree {
         key: Key,
         value: RecordId,
     ) -> Option<(Key, PageId)> {
-        let inner_page: &mut BTreeInnerPage = inner_page_ref.page_mut().into();
+        let inner_page = inner_page_ref.btree_inner_page_mut();
 
         let children_page_id = inner_page.search(key);
         let children_page_ref = self
@@ -73,8 +71,8 @@ impl BTree {
             && let Some(mut split) = inner_page.insert(split_key, rhs_page_id)
         {
             let mut rhs_inner_page_ref = self.page_cache.new_page().expect("TODO");
-            let rhs_inner_page: &mut BTreeInnerPage = rhs_inner_page_ref.page_mut().into();
             let rhs_inner_page_id = rhs_inner_page_ref.metadata().page_id;
+            let rhs_inner_page = rhs_inner_page_ref.btree_inner_page_mut();
             rhs_inner_page.init_header();
             let split_key = split.split(rhs_inner_page, split_key, rhs_page_id);
 
@@ -93,10 +91,10 @@ impl BTree {
         key: Key,
         value: RecordId,
     ) -> Option<(Key, PageId)> {
-        let lhs: &mut BTreeLeafPage = lhs_page_ref.page_mut().into();
+        let lhs = lhs_page_ref.btree_leaf_page_mut();
         if let Some(mut split) = lhs.insert(key, value) {
             let mut rhs_page_ref = self.page_cache.new_page().expect("TODO");
-            let rhs: &mut BTreeLeafPage = rhs_page_ref.page_mut().into();
+            let rhs = rhs_page_ref.btree_leaf_page_mut();
             rhs.init();
             let split_key = split.split(rhs, key, value);
             let rhs_page_id = rhs_page_ref.metadata().page_id;
@@ -114,7 +112,7 @@ impl BTree {
     }
 
     pub fn insert(&mut self, key: Key, record_id: RecordId) {
-        let mut root_page_ref = self
+        let root_page_ref = self
             .page_cache
             .get_page_mut(self.root_page_id)
             .expect("TODO");
@@ -126,7 +124,7 @@ impl BTree {
 
         if let Some((split_key, rhs_page_id)) = result {
             let mut new_root_page_ref = self.page_cache.new_page().expect("TODO");
-            let new_root_page: &mut BTreeInnerPage = new_root_page_ref.page_mut().into();
+            let new_root_page = new_root_page_ref.btree_inner_page_mut();
             new_root_page.init(split_key, self.root_page_id, rhs_page_id);
             new_root_page_ref.metadata_mut().set_dirty();
             self.root_page_id = new_root_page_ref.metadata().page_id;
@@ -138,14 +136,15 @@ impl BTree {
 
         match btree_get_page_type(page_ref.page()) {
             BTreePageType::Inner => {
-                let inner_page: &BTreeInnerPage = page_ref.page().into();
+                let inner_page = page_ref.btree_inner_page();
                 let children_page_id = inner_page.search(key);
                 self.delete_r(children_page_id, key)
             }
             BTreePageType::Leaf => {
                 drop(page_ref);
+                // reacquire a page lock, but mutable
                 let mut page_ref = self.page_cache.get_page_mut(page_id).expect("TODO");
-                let leaf_page: &mut BTreeLeafPage = page_ref.page_mut().into();
+                let leaf_page = page_ref.btree_leaf_page_mut();
                 let result = leaf_page.delete(key);
                 page_ref.metadata_mut().set_dirty();
                 result
@@ -194,7 +193,7 @@ mod tests {
                 let page_id = page_ref.metadata().page_id;
                 match btree_get_page_type(page_ref.page()) {
                     BTreePageType::Inner => {
-                        let inner_page: &BTreeInnerPage = page_ref.page().into();
+                        let inner_page = page_ref.btree_inner_page();
                         print!(
                             " Inner({page_id}): keys={:?} pointers={:?} |",
                             inner_page.keys(),
@@ -203,7 +202,7 @@ mod tests {
                         new_page_ids.extend(inner_page.pointers());
                     }
                     BTreePageType::Leaf => {
-                        let leaf_page: &BTreeLeafPage = page_ref.page().into();
+                        let leaf_page = page_ref.btree_leaf_page();
                         print!(
                             " Leaf({})=>({}): keys={:?} |",
                             page_id,
