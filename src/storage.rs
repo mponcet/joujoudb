@@ -13,11 +13,19 @@ pub enum StorageError {
     Io(#[from] std::io::Error),
 }
 
+/// Manages the on-disk storage of database pages.
+///
+/// The `Storage` struct is responsible for reading from and writing to the database file.
+/// It uses direct I/O to bypass the operating system's buffer cache, ensuring that data
+/// is written directly to the disk.
 pub struct Storage {
     file: File,
 }
 
 impl Storage {
+    /// Creates a new storage file or opens an existing one.
+    ///
+    /// Returns a `Result` containing the `Storage` instance if successful, or a `StorageError` on failure.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, StorageError> {
         let file = OpenOptions::new()
             .read(true)
@@ -31,6 +39,9 @@ impl Storage {
         Ok(Self { file })
     }
 
+    /// Reads a page from the database file.
+    ///
+    /// Returns an empty `Result` if successful, or a `StorageError` on failure.
     pub fn read_page(&mut self, page_id: PageId, page: &mut Page) -> Result<(), StorageError> {
         let offset = page_id as u64 * PAGE_SIZE as u64;
 
@@ -41,6 +52,9 @@ impl Storage {
         Ok(())
     }
 
+    /// Writes a page to the database file.
+    ///
+    /// Returns an empty `Result` if successful, or a `StorageError` on failure.
     pub fn write_page(&mut self, page: &Page, page_id: PageId) -> Result<(), StorageError> {
         let offset = page_id as u64 * PAGE_SIZE as u64;
 
@@ -51,6 +65,13 @@ impl Storage {
         Ok(())
     }
 
+    /// Flushes any buffered data to the disk.
+    ///
+    /// This function ensures that all data is written to the underlying storage device.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying `fsync` operation fails.
     pub fn flush(&mut self) {
         let result = self.file.flush();
         if result.is_err() {
@@ -60,9 +81,7 @@ impl Storage {
         }
     }
 
-    // this information will be later stored in a metadata page
-    // at the beginning of the file.
-    // page 0 is used as in invalid page id, start at page id 1
+    /// Returns the ID of the last page in the database file.
     pub fn last_page_id(&mut self) -> PageId {
         (self.file.metadata().unwrap().len() / PAGE_SIZE as u64) as u32 + 1
     }

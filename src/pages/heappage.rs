@@ -5,41 +5,44 @@ use thiserror::Error;
 use zerocopy::*;
 use zerocopy_derive::*;
 
+/// The identifier for a slot in a heap page.
 pub type HeapPageSlotId = u16;
 
+/// The header of a heap page, containing metadata about the page.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 struct HeapPageHeader {
     num_slots: HeapPageSlotId,
 }
 
-/// A slotted page structure.
+/// A slotted page that stores tuples.
 ///
-/// Slot array grows from start to end.
-/// Tuple section grows from end to start.
+/// The `HeapPage` is organized as follows:
+/// - A header that contains metadata about the page.
+/// - A slot array that grows from the beginning of the page.
+/// - A tuple section that grows from the end of the page.
 ///
-///+-------------------------------+
-///|           Header              |
-///|-------------------------------|
-///| Num Records: 3                |
-///|-------------------------------|
-///|           Slot Array          |
-///|-------------------------------| <- start
-///| Slot 0: Tuple 0 offset        |
-///| Slot 1: Tuple 1 offset        |
-///| Slot 2: Tuple 2 offset        |
-///|-------------------------------|
-///|           Free Space          |
-///|-------------------------------|
-///| [Unused Space]                |
-///|-------------------------------|
-///|          Tuple Section        |
-///|-------------------------------|
-///| Tuple 2: [Data]               |
-///| Tuple 1: [Data]               |
-///| Tuple 0: [Data]               |
-///+-------------------------------+ <- end
-
+/// This layout allows for efficient use of space and easy access to tuples.
+///
+/// ```text
+/// +-------------------------------------------------+
+/// | Page Header (number of slots)                   |
+/// +-------------------------------------------------+
+/// | Slot Array (offsets and lengths of tuples)      |
+/// |  - Slot 0: (offset, length)                     |
+/// |  - Slot 1: (offset, length)                     |
+/// |  - ...                                          |
+/// +-------------------------------------------------+
+/// |                                                 |
+/// |                  Free Space                     |
+/// |                                                 |
+/// +-------------------------------------------------+
+/// | Tuple Data (grows from the end of the page)     |
+/// |  - Tuple 2: [ ... data ... ]                    |
+/// |  - Tuple 1: [ ... data ... ]                    |
+/// |  - Tuple 0: [ ... data ... ]                    |
+/// +-------------------------------------------------+
+/// ```
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct HeapPage {
@@ -93,9 +96,10 @@ impl HeapPage {
     const SLOT_SIZE: usize = std::mem::size_of::<HeapPageSlot>();
     const DATA_SIZE: usize = PAGE_SIZE - Self::HEADER_SIZE;
 
-    // max tuple size: space for header and values
+    /// The maximum size of a tuple that can be stored in a heap page.
     pub const MAX_TUPLE_SIZE: usize = Self::DATA_SIZE - Self::SLOT_SIZE;
 
+    /// Creates a new, empty `HeapPage`.
     pub fn new() -> Self {
         Self::default()
     }
@@ -143,6 +147,9 @@ impl HeapPage {
         free_space >= (Self::SLOT_SIZE + tuple.len())
     }
 
+    /// Inserts a tuple into the heap page.
+    ///
+    /// Returns a `Result` containing the `HeapPageSlotId` of the new tuple, or a `HeapPageError` if there is not enough free space.
     pub fn insert_tuple(&mut self, tuple: &Tuple) -> Result<HeapPageSlotId, HeapPageError> {
         if self.has_free_space(tuple) {
             // insert tuple
@@ -167,6 +174,9 @@ impl HeapPage {
         }
     }
 
+    /// Deletes a tuple from the heap page.
+    ///
+    /// Returns an empty `Result` if successful, or a `HeapPageError` if the slot is not found.
     pub fn delete_tuple(&mut self, slot_id: HeapPageSlotId) -> Result<(), HeapPageError> {
         let slot = self
             .get_slot_mut(slot_id)
@@ -176,6 +186,9 @@ impl HeapPage {
         Ok(())
     }
 
+    /// Retrieves a tuple from the heap page.
+    ///
+    /// Returns a `Result` containing a `Tuple` reference, or a `HeapPageError` if the slot is not found or has been deleted.
     pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple<'_>, HeapPageError> {
         let slot = self.get_slot(slot_id).ok_or(HeapPageError::SlotNotFound)?;
         let (idx, len) = (slot.offset as usize, slot.len as usize);

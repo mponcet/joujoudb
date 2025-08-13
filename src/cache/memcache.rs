@@ -19,7 +19,7 @@ use thiserror::Error;
 struct UnsafePage(UnsafeCell<Page>);
 // SAFETY:
 // Shared and exclusive access are handled with a separate RwLock stored
-// in PageMetadata, so it is safe to mark UnsafePage as Sync.
+// in PageLatch, so it is safe to mark UnsafePage as Sync.
 // In the future, consider looking at: https://github.com/rust-lang/rust/issues/95439
 unsafe impl Sync for UnsafePage {}
 

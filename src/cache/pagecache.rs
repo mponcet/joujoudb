@@ -15,12 +15,19 @@ pub enum PageCacheError {
     MemCache(#[from] MemCacheError),
 }
 
+/// A cache that manages pages in memory and interacts with the on-disk storage.
+///
+/// The `PageCache` is responsible for:
+/// - Fetching pages from the disk and loading them into memory.
+/// - Evicting pages from memory when the cache is full.
+/// - Writing dirty pages back to the disk.
 pub struct PageCache {
     storage: Mutex<Storage>,
     mem_cache: MemCache,
 }
 
 impl PageCache {
+    /// Creates a new `PageCache` with the given storage backend.
     pub fn new(storage: Storage) -> Self {
         Self {
             storage: Mutex::new(storage),
@@ -28,6 +35,11 @@ impl PageCache {
         }
     }
 
+    /// Creates a new page, both in the cache and on disk.
+    ///
+    /// If the cache is full, it will try to evict a page to make space.
+    ///
+    /// Returns a mutable reference to the new page.
     pub fn new_page(&self) -> Result<PageRefMut<'_>, PageCacheError> {
         let mut storage = self.storage.lock().unwrap();
         let page_id = storage.last_page_id();
@@ -56,6 +68,9 @@ impl PageCache {
             .map_err(PageCacheError::MemCache)
     }
 
+    /// Retrieves a a read-only reference to a page from the cache.
+    ///
+    /// If the page is not in the cache, it will be fetched from the disk.
     pub fn get_page(&self, page_id: PageId) -> Result<PageRef<'_>, PageCacheError> {
         if let Ok(page) = self.mem_cache.get_page(page_id) {
             Ok(page)
@@ -78,6 +93,9 @@ impl PageCache {
         }
     }
 
+    /// Retrieves a mutable reference to a page from the cache.
+    ///
+    /// If the page is not in the cache, it will be fetched from the disk.
     pub fn get_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, PageCacheError> {
         if let Ok(page) = self.mem_cache.get_page_mut(page_id) {
             Ok(page)

@@ -6,6 +6,49 @@ use crate::pages::btree_get_page_type;
 
 use thiserror::Error;
 
+/// A B+ tree implementation for indexing and storing key-value pairs.
+///
+/// The `BTree` struct provides a high-level interface for creating, searching, inserting,
+/// and deleting records. It abstracts away the underlying page management by using a `PageCache`.
+///
+/// Key characteristics:
+/// - It is a B+ tree, meaning all records are stored in the leaf pages.
+/// - Leaf pages are linked together to allow for efficient range scans.
+/// - Deletion does not trigger merging or redistribution of nodes. This simplifies the
+///   implementation and can improve delete performance by avoiding complex rebalancing
+///   operations. However, it may lead to lower storage utilization over time if the
+///   workload has many deletions.
+///
+/// B+ Tree Structure:
+/// ```text
+///                    +--------------------+
+///                    |    Root Page       |  (Inner page with separator keys and pointers)
+///                    |--------------------|
+///                    | Keys:  [20, 40]    |
+///                    | Ptrs:  [1, 2, 3]   |
+///                    +--------------------+
+///                   /          |          \
+///                  /           |           \
+///                 v            v            v
+///        +--------------+  +--------------+  +--------------+
+///        |  Inner Page  |  |  Inner Page  |  |  Inner Page  |  (Inner pages)
+///        |--------------|  |--------------|  |--------------|
+///        | Keys: [10]   |  | Keys: [30]   |  | Keys: [50]   |
+///        | Ptrs: [4,5]  |  | Ptrs: [6,7]  |  | Ptrs: [8,9]  |
+///        +--------------+  +--------------+  +--------------+
+///             /     \           /     \           /     \
+///            /       \         /       \         /       \
+///           v         v       v         v       v         v
+///    +-------------+  +-------------+  +-------------+  +-------------+
+///    |  Leaf Page  |  |  Leaf Page  |  |  Leaf Page  |  |  Leaf Page  |  (Leaf pages)
+///    |-------------|  |-------------|  |-------------|  |-------------|
+///    | Keys: 1..19 |  | Keys:20..39 |  | Keys:40..59 |  | Keys:60..79 |
+///    | Values: Rids|  | Values: Rids|  | Values: Rids|  | Values: Rids|
+///    | Next: -----+|  | Next: -----+|  | Next: -----+|  | Next:  NULL |
+///    +-------------+  +-------------+  +-------------+  +-------------+
+///           |                |                |                |
+///           +----------------+----------------+----------------+  (Linked list)
+/// ```
 struct BTree {
     root_page_id: PageId,
     page_cache: PageCache,
@@ -20,6 +63,9 @@ pub enum BTreeError {
 }
 
 impl BTree {
+    /// Creates a new B-tree.
+    ///
+    /// Returns a `Result` containing the new `BTree` instance, or a `BTreeError` on failure.
     pub fn try_new(storage: Storage) -> Result<Self, BTreeError> {
         let page_cache = PageCache::new(storage);
         let mut root_page_ref = page_cache.new_page().map_err(BTreeError::PageCache)?;
@@ -34,6 +80,9 @@ impl BTree {
         })
     }
 
+    /// Finds the leaf page that should contain the given key.
+    ///
+    /// Returns a `Result` containing a read-only reference to the leaf page, or a `BTreeError` on failure.
     fn find_leaf_page(&self, key: Key) -> Result<PageRef<'_>, BTreeError> {
         let mut page_id = self.root_page_id;
 
@@ -55,6 +104,9 @@ impl BTree {
         }
     }
 
+    /// Searches for a record by its key.
+    ///
+    /// Returns an `Option` containing the `RecordId` if the key is found, or `None` otherwise.
     pub fn search(&self, key: Key) -> Option<RecordId> {
         // For convinience we return an Option.
         // We should log errors instead of unwraping.
@@ -125,6 +177,9 @@ impl BTree {
         }
     }
 
+    /// Inserts a new key-value pair into the B-tree.
+    ///
+    /// Returns an empty `Result` if successful, or a `BTreeError` on failure.
     pub fn insert(&mut self, key: Key, record_id: RecordId) -> Result<(), BTreeError> {
         let root_page_ref = self
             .page_cache
@@ -175,10 +230,16 @@ impl BTree {
         }
     }
 
+    /// Deletes a key-value pair from the B-tree.
+    ///
+    /// Returns an empty `Result` if successful, or a `BTreeError` if the key is not found.
     pub fn delete(&mut self, key: Key) -> Result<(), BTreeError> {
         self.delete_r(self.root_page_id, key)
     }
 
+    /// Creates an iterator over a range of keys.
+    ///
+    /// Returns a `Result` containing the `BTreeRangeIterator`, or a `BTreeError` on failure.
     pub fn iter(&self, start: Key) -> Result<BTreeRangeIterator<'_>, BTreeError> {
         let page_ref = self.find_leaf_page(start)?;
         let leaf_page = page_ref.btree_leaf_page();

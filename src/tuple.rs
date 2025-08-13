@@ -15,20 +15,9 @@ impl TupleHeader {
     }
 }
 
-/// A tuple with a header and values
+/// A reference to a tuple stored in a page.
 ///
-/// # Examples
-/// You can create a new tuple from values with:
-///
-/// ```
-/// let tuple = Tuple::new(values);
-/// ```
-///
-/// You can also create a tuple referencing a tuple inside a `Page`:
-///
-/// ```
-/// let tuple = Page::get_tuple(slot_id);
-/// ```
+/// `TupleRef` provides a way to access tuple data without copying it.
 #[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C, packed)]
 pub struct TupleRef {
@@ -36,11 +25,16 @@ pub struct TupleRef {
     values: [u8],
 }
 
+/// A newly created tuple that owns its data.
 pub struct TupleNew {
     header: TupleHeader,
     values: Box<[u8]>,
 }
 
+/// Represents a tuple, which can be either a new tuple or a reference to an existing one.
+///
+/// This enum allows for flexible handling of tuples, whether they are being created
+/// or read from storage.
 pub enum Tuple<'a> {
     New(TupleNew),
     Ref(&'a TupleRef),
@@ -53,8 +47,12 @@ pub enum TupleError {
 }
 
 impl<'a> Tuple<'a> {
+    /// The size of the tuple header in bytes.
     pub const HEADER_SIZE: usize = std::mem::size_of::<TupleHeader>();
 
+    /// Creates a new tuple with the given values.
+    ///
+    /// Returns a `Result` containing the new `Tuple`, or a `TupleError` if the tuple size exceeds the maximum allowed.
     pub fn try_new(values: Box<[u8]>) -> Result<Self, TupleError> {
         let values_len = values.len();
         if Self::HEADER_SIZE + values_len > HeapPage::MAX_TUPLE_SIZE {
@@ -67,6 +65,7 @@ impl<'a> Tuple<'a> {
         }))
     }
 
+    /// Returns a reference to the tuple's header.
     pub fn header(&self) -> &TupleHeader {
         match self {
             Tuple::New(tuple_new) => &tuple_new.header,
@@ -74,6 +73,7 @@ impl<'a> Tuple<'a> {
         }
     }
 
+    /// Returns a slice containing the tuple's values.
     pub fn values(&self) -> &[u8] {
         match self {
             Tuple::New(tuple_new) => &tuple_new.values,
@@ -81,6 +81,7 @@ impl<'a> Tuple<'a> {
         }
     }
 
+    /// Returns the total length of the tuple in bytes, including the header.
     pub fn len(&self) -> usize {
         Self::HEADER_SIZE + self.values().len()
     }
