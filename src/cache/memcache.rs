@@ -4,6 +4,7 @@ use crate::pages::{HeapPage, Page, PageId, PageMetadata};
 
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, VecDeque};
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -106,7 +107,7 @@ pub struct PageRefMut<'page> {
     eviction_policy: &'page Mutex<dyn EvictionPolicy>,
 }
 
-impl PageRefMut<'_> {
+impl<'page> PageRefMut<'page> {
     pub fn page(&self) -> &Page {
         self.page
     }
@@ -153,6 +154,26 @@ impl PageRefMut<'_> {
 
     pub fn btree_leaf_page_mut(&mut self) -> &mut BTreeLeafPage {
         self.page_mut().into()
+    }
+
+    pub fn downgrade(self) -> PageRef<'page> {
+        let this = ManuallyDrop::new(self);
+
+        // SAFETY: The references are valid for the lifetime 'page because we still hold the lock.
+        // Don't drop `this` with ManuallyDrop::drop(this), the Drop implementation of PageRef
+        // would call metadata.unpin() and drop the guard.
+        let _guard = RwLockWriteGuard::downgrade(unsafe { std::ptr::read(&this._guard) });
+        let page = unsafe { &*(this.page as *const Page) };
+        let metadata = unsafe { &*(this.metadata as *const PageMetadata) };
+        let eviction_policy =
+            unsafe { &*(this.eviction_policy as *const Mutex<dyn EvictionPolicy>) };
+
+        PageRef {
+            _guard,
+            page,
+            metadata,
+            eviction_policy,
+        }
     }
 }
 

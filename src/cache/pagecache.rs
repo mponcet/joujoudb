@@ -72,17 +72,14 @@ impl PageCache {
                 .new_page_mut(page_id)
                 .map_err(PageCacheError::MemCache)?;
 
-            let mut storage = self.storage.lock().unwrap();
-            storage
-                .read_page(page_id, new_page_ref.page_mut())
-                .map_err(PageCacheError::Storage)?;
-            drop(storage);
+            {
+                let mut storage = self.storage.lock().unwrap();
+                storage
+                    .read_page(page_id, new_page_ref.page_mut())
+                    .map_err(PageCacheError::Storage)?;
+            }
 
-            // FIXME: downgrade write lock to read lock
-            drop(new_page_ref);
-            self.mem_cache
-                .get_page(page_id)
-                .map_err(PageCacheError::MemCache)
+            Ok(new_page_ref.downgrade())
         }
     }
 
