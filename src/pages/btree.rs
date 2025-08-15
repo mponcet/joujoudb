@@ -124,7 +124,7 @@ impl BTreeInnerPage {
         &self.pointers[..num_keys + 1]
     }
 
-    pub fn search(&self, key: Key) -> PageId {
+    pub fn get(&self, key: Key) -> PageId {
         match self.keys().binary_search(&key) {
             Ok(pos) => self.pointers[pos + 1],
             Err(pos) => self.pointers[pos],
@@ -245,6 +245,7 @@ impl SplitLeaf<'_> {
 
 impl BTreeLeafPage {
     #[inline]
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.header.num_keys as usize
     }
@@ -275,12 +276,8 @@ impl BTreeLeafPage {
         self.next = page_id;
     }
 
-    pub fn find_key_index(&self, key: Key) -> Option<usize> {
-        self.keys().binary_search(&key).ok()
-    }
-
-    pub fn search(&self, key: Key) -> Option<RecordId> {
-        let pos = self.find_key_index(key)?;
+    pub fn get(&self, key: Key) -> Option<RecordId> {
+        let pos = self.keys().binary_search(&key).ok()?;
         Some(self.values[pos])
     }
 
@@ -376,9 +373,9 @@ mod tests {
         assert!(leaf.keys().is_sorted());
 
         let key = (BTREE_NUM_KEYS / 2) as Key;
-        assert!(leaf.search(key).is_some());
+        assert!(leaf.get(key).is_some());
         let _ = leaf.delete(key);
-        assert!(leaf.search(key).is_none());
+        assert!(leaf.get(key).is_none());
         assert!(leaf.keys().is_sorted());
     }
 
