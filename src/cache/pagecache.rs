@@ -114,37 +114,25 @@ impl PageCache {
 mod tests {
     use super::*;
     use crate::cache::DEFAULT_PAGE_CACHE_SIZE;
-
-    use std::path::PathBuf;
-
-    fn test_path() -> PathBuf {
-        [
-            "/tmp/",
-            "joujoudb_",
-            uuid::Uuid::new_v4().to_string().as_str(),
-        ]
-        .into_iter()
-        .collect::<String>()
-        .into()
-    }
+    use crate::pages::PAGE_RESERVED;
 
     #[test]
-    fn test_lru_eviction_policy() {
-        let storage = Storage::open(test_path()).unwrap();
+    fn evict_page_lru() {
+        let storage_path = format!("/tmp/joujoudb_{}", uuid::Uuid::new_v4());
+        let storage = Storage::open(storage_path).unwrap();
         let page_cache = PageCache::new(storage);
 
-        for _ in 0..DEFAULT_PAGE_CACHE_SIZE {
+        // Page 0 is reserved and not allocatable via new_page().
+        for _ in 1..DEFAULT_PAGE_CACHE_SIZE {
             page_cache.new_page().unwrap();
         }
 
-        let page0 = page_cache.get_page(1).unwrap();
+        let page0 = page_cache.get_page(PAGE_RESERVED).unwrap();
         let page1 = page_cache.get_page(1).unwrap();
-        let page2 = page_cache.get_page(2).unwrap();
 
-        // Page 3 should be evicted since it's the oldest non used page.
-        assert_eq!(page_cache.mem_cache.evict(), Some(3));
+        // Page 2 should be evicted since it's the oldest non used page.
+        assert_eq!(page_cache.mem_cache.evict(), Some(2));
         drop(page0);
         drop(page1);
-        drop(page2);
     }
 }
