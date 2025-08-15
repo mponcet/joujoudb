@@ -27,7 +27,7 @@ impl Storage {
     ///
     /// Returns a `Result` containing the `Storage` instance if successful, or a `StorageError` on failure.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, StorageError> {
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
@@ -35,6 +35,11 @@ impl Storage {
             .custom_flags(libc::O_DIRECT)
             .open(path)
             .map_err(StorageError::Io)?;
+
+        if file.metadata().unwrap().len() == 0 {
+            // Create reserved page
+            file.write_all(&[0; PAGE_SIZE]).unwrap();
+        }
 
         Ok(Self { file })
     }
@@ -81,9 +86,11 @@ impl Storage {
         }
     }
 
-    /// Returns the ID of the last page in the database file.
-    pub fn last_page_id(&mut self) -> PageId {
-        (self.file.metadata().unwrap().len() / PAGE_SIZE as u64) as u32 + 1
+    /// Allocates a new page and returns the ID of the last page in the database file.
+    pub fn allocate_page(&mut self) -> PageId {
+        let offset = self.file.metadata().unwrap().len();
+        self.file.write_all_at(&[0; PAGE_SIZE], offset).unwrap();
+        (offset / PAGE_SIZE as u64) as PageId
     }
 }
 

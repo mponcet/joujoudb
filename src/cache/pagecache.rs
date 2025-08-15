@@ -47,7 +47,6 @@ impl PageCache {
         // try evict a page if the memory cache is full
         // FIXME: race condition
         if let Some(page_id) = self.mem_cache.evict() {
-            println!("page {page_id} selected for eviction");
             if let Ok(page) = self.mem_cache.get_page(page_id) {
                 storage.write_page(&page, page_id)?;
                 storage.flush();
