@@ -1,5 +1,5 @@
 use crate::cache::memcache::MemCache;
-use crate::pages::{Page, PageId};
+use crate::pages::PageId;
 use crate::storage::{Storage, StorageError};
 
 use std::sync::Mutex;

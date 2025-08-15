@@ -82,6 +82,8 @@ impl<'a> Tuple<'a> {
     }
 
     /// Returns the total length of the tuple in bytes, including the header.
+    #[inline]
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         Self::HEADER_SIZE + self.values().len()
     }
