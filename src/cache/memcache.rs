@@ -1,7 +1,5 @@
 use crate::cache::{DEFAULT_PAGE_CACHE_SIZE, EvictionPolicy, lru::LRU};
-use crate::pages::BTreeInnerPage;
-use crate::pages::BTreeLeafPage;
-use crate::pages::BTreeSuperBlock;
+use crate::pages::{BTreeInnerPage, BTreeLeafPage, BTreeSuperBlock};
 use crate::pages::{HeapPage, Page, PageId, PageMetadata};
 
 use std::cell::UnsafeCell;
@@ -309,44 +307,6 @@ impl MemCache {
         }
 
         Ok(PageRefMut {
-            _guard,
-            page,
-            metadata,
-            eviction_policy: &self.eviction_policy,
-        })
-    }
-
-    pub fn new_page(&self, page_id: PageId) -> Result<PageRef<'_>, MemCacheError> {
-        let idx = {
-            let mut page_table = self.page_table.lock().unwrap();
-            assert!(!page_table.map.contains_key(&page_id));
-            page_table
-                .free_list
-                .pop_front()
-                .ok_or(MemCacheError::Full)?
-        };
-
-        let latch = &self.pages_latch[idx].latch;
-        let _guard = latch.read().unwrap();
-        let page = unsafe { self.get_page_ref_mut(idx) };
-        let metadata = unsafe { self.get_metadata_ref_mut(idx) };
-        *metadata = PageMetadata::new(page_id);
-        let old_counter = metadata.pin();
-        assert_eq!(old_counter, 0);
-
-        {
-            let mut page_table = self.page_table.lock().unwrap();
-            assert!(!page_table.map.contains_key(&page_id));
-            page_table.map.insert(page_id, idx);
-        }
-
-        {
-            let mut eviction_policy = self.eviction_policy.lock().unwrap();
-            eviction_policy.record_access(page_id);
-            eviction_policy.set_unevictable(page_id);
-        }
-
-        Ok(PageRef {
             _guard,
             page,
             metadata,
