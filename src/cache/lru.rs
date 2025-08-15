@@ -55,7 +55,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lru_eviction_policy() {
+    fn lru_eviction_policy() {
         let mut lru = LRU::new();
         lru.record_access(0);
         lru.set_evictable(0);
