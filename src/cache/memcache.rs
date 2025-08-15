@@ -1,8 +1,7 @@
-use crate::cache::DEFAULT_PAGE_CACHE_SIZE;
-use crate::cache::EvictionPolicy;
-use crate::cache::lru::LRU;
+use crate::cache::{DEFAULT_PAGE_CACHE_SIZE, EvictionPolicy, lru::LRU};
 use crate::pages::BTreeInnerPage;
 use crate::pages::BTreeLeafPage;
+use crate::pages::BTreeSuperBlock;
 use crate::pages::{HeapPage, Page, PageId, PageMetadata};
 
 use std::cell::UnsafeCell;
@@ -89,6 +88,10 @@ impl PageRef<'_> {
         self.page().into()
     }
 
+    pub fn btree_superblock(&self) -> &BTreeSuperBlock {
+        self.page().into()
+    }
+
     pub fn btree_inner_page(&self) -> &BTreeInnerPage {
         self.page().into()
     }
@@ -127,6 +130,14 @@ impl PageRefMut<'_> {
     }
 
     pub fn heap_page_mut(&mut self) -> &mut HeapPage {
+        self.page_mut().into()
+    }
+
+    pub fn btree_superblock(&self) -> &BTreeSuperBlock {
+        self.page().into()
+    }
+
+    pub fn btree_superblock_mut(&mut self) -> &mut BTreeSuperBlock {
         self.page_mut().into()
     }
 
