@@ -245,21 +245,26 @@ impl MemCache {
     }
 
     pub fn get_page(&self, page_id: PageId) -> Result<PageRef<'_>, MemCacheError> {
-        let page_table = self.page_table.lock().unwrap();
-        let idx = *page_table
-            .map
-            .get(&page_id)
-            .ok_or(MemCacheError::PageNotFound)?;
+        let idx = {
+            let page_table = self.page_table.lock().unwrap();
+            page_table
+                .map
+                .get(&page_id)
+                .copied()
+                .ok_or(MemCacheError::PageNotFound)?
+        };
 
-        let page = unsafe { self.get_page_ref(idx) };
-        let metadata = unsafe { self.get_metadata_ref(idx) };
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.read().unwrap();
+        let page = unsafe { self.get_page_ref(idx) };
+        let metadata = unsafe { self.get_metadata_ref(idx) };
         metadata.pin();
 
-        let mut eviction_policy = self.eviction_policy.lock().unwrap();
-        eviction_policy.record_access(page_id);
-        eviction_policy.set_unevictable(page_id);
+        {
+            let mut eviction_policy = self.eviction_policy.lock().unwrap();
+            eviction_policy.record_access(page_id);
+            eviction_policy.set_unevictable(page_id);
+        }
 
         Ok(PageRef {
             _guard,
@@ -270,22 +275,27 @@ impl MemCache {
     }
 
     pub fn get_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, MemCacheError> {
-        let page_table = self.page_table.lock().unwrap();
-        let idx = *page_table
-            .map
-            .get(&page_id)
-            .ok_or(MemCacheError::PageNotFound)?;
+        let idx = {
+            let page_table = self.page_table.lock().unwrap();
+            page_table
+                .map
+                .get(&page_id)
+                .copied()
+                .ok_or(MemCacheError::PageNotFound)?
+        };
 
-        let page = unsafe { self.get_page_ref_mut(idx) };
-        let metadata = unsafe { self.get_metadata_ref_mut(idx) };
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.write().unwrap();
+        let page = unsafe { self.get_page_ref_mut(idx) };
+        let metadata = unsafe { self.get_metadata_ref_mut(idx) };
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
 
-        let mut eviction_policy = self.eviction_policy.lock().unwrap();
-        eviction_policy.record_access(page_id);
-        eviction_policy.set_unevictable(page_id);
+        {
+            let mut eviction_policy = self.eviction_policy.lock().unwrap();
+            eviction_policy.record_access(page_id);
+            eviction_policy.set_unevictable(page_id);
+        }
 
         Ok(PageRefMut {
             _guard,
@@ -296,28 +306,34 @@ impl MemCache {
     }
 
     pub fn new_page(&self, page_id: PageId) -> Result<PageRef<'_>, MemCacheError> {
-        let mut page_table = self.page_table.lock().unwrap();
+        let idx = {
+            let mut page_table = self.page_table.lock().unwrap();
+            assert!(!page_table.map.contains_key(&page_id));
+            page_table
+                .free_list
+                .pop_front()
+                .ok_or(MemCacheError::Full)?
+        };
 
-        #[cfg(not(test))]
-        assert!(page_table.map.contains_key(&page_id));
-
-        let idx = page_table
-            .free_list
-            .pop_front()
-            .ok_or(MemCacheError::Full)?;
-        page_table.map.insert(page_id, idx);
-
+        let latch = &self.pages_latch[idx].latch;
+        let _guard = latch.read().unwrap();
         let page = unsafe { self.get_page_ref_mut(idx) };
         let metadata = unsafe { self.get_metadata_ref_mut(idx) };
-        let latch = &self.pages_latch[idx].latch;
         *metadata = PageMetadata::new(page_id);
-        let _guard = latch.read().unwrap();
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
 
-        let mut eviction_policy = self.eviction_policy.lock().unwrap();
-        eviction_policy.record_access(page_id);
-        eviction_policy.set_unevictable(page_id);
+        {
+            let mut page_table = self.page_table.lock().unwrap();
+            assert!(!page_table.map.contains_key(&page_id));
+            page_table.map.insert(page_id, idx);
+        }
+
+        {
+            let mut eviction_policy = self.eviction_policy.lock().unwrap();
+            eviction_policy.record_access(page_id);
+            eviction_policy.set_unevictable(page_id);
+        }
 
         Ok(PageRef {
             _guard,
@@ -328,28 +344,33 @@ impl MemCache {
     }
 
     pub fn new_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, MemCacheError> {
-        let mut page_table = self.page_table.lock().unwrap();
+        let idx = {
+            let mut page_table = self.page_table.lock().unwrap();
+            page_table
+                .free_list
+                .pop_front()
+                .ok_or(MemCacheError::Full)?
+        };
 
-        #[cfg(not(test))]
-        assert!(page_table.map.contains_key(&page_id));
-
-        let idx = page_table
-            .free_list
-            .pop_front()
-            .ok_or(MemCacheError::Full)?;
-        page_table.map.insert(page_id, idx);
-
+        let latch = &self.pages_latch[idx].latch;
+        let _guard = latch.write().unwrap();
         let page = unsafe { self.get_page_ref_mut(idx) };
         let metadata = unsafe { self.get_metadata_ref_mut(idx) };
-        let latch = &self.pages_latch[idx].latch;
         *metadata = PageMetadata::new(page_id);
-        let _guard = latch.write().unwrap();
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
 
-        let mut eviction_policy = self.eviction_policy.lock().unwrap();
-        eviction_policy.record_access(page_id);
-        eviction_policy.set_unevictable(page_id);
+        {
+            let mut page_table = self.page_table.lock().unwrap();
+            assert!(!page_table.map.contains_key(&page_id));
+            page_table.map.insert(page_id, idx);
+        }
+
+        {
+            let mut eviction_policy = self.eviction_policy.lock().unwrap();
+            eviction_policy.record_access(page_id);
+            eviction_policy.set_unevictable(page_id);
+        }
 
         Ok(PageRefMut {
             _guard,
@@ -360,21 +381,24 @@ impl MemCache {
     }
 
     pub fn remove_page(&self, page_id: PageId) -> Result<(), MemCacheError> {
-        let mut page_table = self.page_table.lock().unwrap();
-        let idx = page_table
-            .map
-            .get(&page_id)
-            .copied()
-            .ok_or(MemCacheError::PageNotFound)?;
+        let idx = {
+            let mut page_table = self.page_table.lock().unwrap();
+            page_table
+                .map
+                .remove(&page_id)
+                .ok_or(MemCacheError::PageNotFound)?
+        };
 
-        let metadata = unsafe { self.get_metadata_ref(idx) };
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.write().unwrap();
+        let metadata = unsafe { self.get_metadata_ref(idx) };
         assert_eq!(metadata.get_pin_counter(), 0);
-        page_table.map.remove(&page_id);
-        page_table.free_list.push_back(idx);
 
         self.eviction_policy.lock().unwrap().remove(page_id);
+        {
+            let mut page_table = self.page_table.lock().unwrap();
+            page_table.free_list.push_back(idx);
+        }
 
         Ok(())
     }
@@ -397,29 +421,41 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn test_concurrent_cache_access() {
+    fn high_contention_scenario() {
         let cache = Arc::new(MemCache::new());
 
-        let cache1 = cache.clone();
-        let cache2 = cache.clone();
-        let t1 = std::thread::spawn(move || {
-            for page_id in 1..100000 {
-                let _ = cache1.new_page(page_id);
-            }
-        });
-        let t2 = std::thread::spawn(move || {
-            for _ in 1..100000 {
-                let _ = cache2.get_page(0);
-            }
-        });
-        let t3 = std::thread::spawn(move || {
-            for _ in 1..100000 {
-                let _ = cache.remove_page(0);
-            }
-        });
+        let mut handles = vec![];
 
-        t1.join().unwrap();
-        t2.join().unwrap();
-        t3.join().unwrap();
+        for thread_id in 0..16 {
+            let cache = cache.clone();
+            let handle = std::thread::spawn(move || {
+                for j in 0..DEFAULT_PAGE_CACHE_SIZE / 2 {
+                    let page_id = j as PageId;
+                    match thread_id {
+                        0 => {
+                            let _ = cache.new_page_mut(page_id);
+                        }
+                        1 => {
+                            let _ =
+                                cache.new_page_mut(DEFAULT_PAGE_CACHE_SIZE as u32 / 2 + page_id);
+                        }
+                        2..6 => {
+                            let _ = cache.get_page_mut(page_id);
+                        }
+                        6..8 => {
+                            let _ = cache.remove_page(page_id);
+                        }
+                        _ => {
+                            let _ = cache.get_page(page_id);
+                        }
+                    }
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
     }
 }

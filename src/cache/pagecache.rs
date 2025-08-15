@@ -42,26 +42,19 @@ impl PageCache {
     /// Returns a mutable reference to the new page.
     pub fn new_page(&self) -> Result<PageRefMut<'_>, PageCacheError> {
         let mut storage = self.storage.lock().unwrap();
-        let page_id = storage.last_page_id();
-        let page = Page::new();
-        // FIXME: needed for self.storage.last_page_id()
-        storage.write_page(&page, page_id)?;
+        let page_id = storage.allocate_page();
 
         // try evict a page if the memory cache is full
-        while let Some(page_id) = self.mem_cache.evict() {
-            let Ok(page) = self.mem_cache.get_page(page_id) else {
-                continue;
+        // FIXME: race condition
+        if let Some(page_id) = self.mem_cache.evict() {
+            println!("page {page_id} selected for eviction");
+            if let Ok(page) = self.mem_cache.get_page(page_id) {
+                storage.write_page(&page, page_id)?;
+                storage.flush();
             };
-            storage.write_page(&page, page_id)?;
-            storage.flush();
-            drop(page);
 
-            if self.mem_cache.remove_page(page_id).is_err() {
-                continue;
-            }
-            break;
+            self.mem_cache.remove_page(page_id)?;
         }
-        drop(storage);
 
         self.mem_cache
             .new_page_mut(page_id)
@@ -79,11 +72,12 @@ impl PageCache {
                 .mem_cache
                 .new_page_mut(page_id)
                 .map_err(PageCacheError::MemCache)?;
-            self.storage
-                .lock()
-                .unwrap()
+
+            let mut storage = self.storage.lock().unwrap();
+            storage
                 .read_page(page_id, new_page_ref.page_mut())
                 .map_err(PageCacheError::Storage)?;
+            drop(storage);
 
             // FIXME: downgrade write lock to read lock
             drop(new_page_ref);
@@ -104,11 +98,12 @@ impl PageCache {
                 .mem_cache
                 .new_page_mut(page_id)
                 .map_err(PageCacheError::MemCache)?;
-            self.storage
-                .lock()
-                .unwrap()
+
+            let mut storage = self.storage.lock().unwrap();
+            storage
                 .read_page(page_id, new_page_ref.page_mut())
                 .map_err(PageCacheError::Storage)?;
+            drop(storage);
 
             Ok(new_page_ref)
         }
@@ -138,15 +133,18 @@ mod tests {
         let storage = Storage::open(test_path()).unwrap();
         let page_cache = PageCache::new(storage);
 
-        // Fill cache. Page 0 is reserved.
-        for _ in 1..DEFAULT_PAGE_CACHE_SIZE {
+        for _ in 0..DEFAULT_PAGE_CACHE_SIZE {
             page_cache.new_page().unwrap();
         }
 
-        let _ = page_cache.get_page(1).unwrap();
-        let _ = page_cache.get_page(2).unwrap();
+        let page0 = page_cache.get_page(1).unwrap();
+        let page1 = page_cache.get_page(1).unwrap();
+        let page2 = page_cache.get_page(2).unwrap();
 
         // Page 3 should be evicted since it's the oldest non used page.
         assert_eq!(page_cache.mem_cache.evict(), Some(3));
+        drop(page0);
+        drop(page1);
+        drop(page2);
     }
 }
