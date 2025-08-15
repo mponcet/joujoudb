@@ -1,7 +1,6 @@
 use crate::cache::{PageCache, PageCacheError, PageRef, PageRefMut};
 use crate::pages::{
-    BTreePageError, BTreePageType, BTreeSuperBlock, Key, PAGE_INVALID, PAGE_RESERVED, PageId,
-    RecordId,
+    BTreePageError, BTreePageType, Key, PAGE_INVALID, PAGE_RESERVED, PageId, RecordId,
 };
 use crate::storage::Storage;
 
@@ -100,7 +99,7 @@ impl BTree {
             match btree_get_page_type(page_ref.page()) {
                 BTreePageType::Inner => {
                     let inner_page = page_ref.btree_inner_page();
-                    let page_id = inner_page.search(key);
+                    let page_id = inner_page.get(key);
                     page_ref = self
                         .page_cache
                         .get_page(page_id)
@@ -121,7 +120,7 @@ impl BTree {
         // We should log errors instead of unwraping.
         let page_ref = self.find_leaf_page(key).unwrap();
         let leaf_page = page_ref.btree_leaf_page();
-        leaf_page.search(key)
+        leaf_page.get(key)
     }
 
     fn insert_inner_r(
@@ -132,7 +131,7 @@ impl BTree {
     ) -> Result<Option<(Key, PageId)>, BTreeError> {
         let inner_page = inner_page_ref.btree_inner_page_mut();
 
-        let children_page_id = inner_page.search(key);
+        let children_page_id = inner_page.get(key);
         let mut children_page_ref = self
             .page_cache
             .get_page_mut(children_page_id)
@@ -221,7 +220,7 @@ impl BTree {
         match btree_get_page_type(page_ref.page()) {
             BTreePageType::Inner => {
                 let inner_page = page_ref.btree_inner_page();
-                let children_page_id = inner_page.search(key);
+                let children_page_id = inner_page.get(key);
                 let mut children_page_ref = self
                     .page_cache
                     .get_page_mut(children_page_id)
@@ -257,10 +256,13 @@ impl BTree {
     pub fn iter(&self, start: Key) -> Result<BTreeRangeIterator<'_>, BTreeError> {
         let page_ref = self.find_leaf_page(start)?;
         let leaf_page = page_ref.btree_leaf_page();
-        let pos = leaf_page.find_key_index(start).expect("TODO");
+        // FIXME: what if the key doesn't exist ?
+        let pos = match leaf_page.keys().binary_search(&start) {
+            Ok(pos) => pos,
+            Err(pos) => pos,
+        };
 
         Ok(BTreeRangeIterator {
-            start,
             pos,
             btree: self,
             page_ref,
@@ -269,7 +271,6 @@ impl BTree {
 }
 
 pub struct BTreeRangeIterator<'btree> {
-    start: Key,
     pos: usize,
     btree: &'btree BTree,
     page_ref: PageRef<'btree>,
@@ -318,6 +319,7 @@ mod tests {
         BTree::try_new(storage).unwrap()
     }
 
+    #[allow(dead_code)]
     fn print_btree(btree: &BTree) {
         let root_page_id = {
             let superblock_ref = btree.page_cache.get_page(PAGE_RESERVED).unwrap();
@@ -572,7 +574,6 @@ mod tests {
                         }
                     }
                 }
-                _ => unreachable!(),
             });
             handles.push(handle);
         }
