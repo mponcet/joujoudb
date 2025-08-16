@@ -109,12 +109,15 @@ impl PageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::cache::DEFAULT_PAGE_CACHE_SIZE;
     use crate::pages::PAGE_RESERVED;
 
+    use tempfile::NamedTempFile;
+
     #[test]
     fn evict_page_lru() {
-        let storage_path = format!("/tmp/joujoudb_{}", uuid::Uuid::new_v4());
+        let storage_path = NamedTempFile::new().unwrap();
         let storage = Storage::open(storage_path).unwrap();
         let page_cache = PageCache::new(storage);
 
