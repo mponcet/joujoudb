@@ -97,18 +97,16 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::pages::HeapPage;
     use crate::tuple::Tuple;
 
-    use std::path::PathBuf;
-
-    fn test_path() -> PathBuf {
-        PathBuf::from("/tmp/test_data")
-    }
+    use tempfile::NamedTempFile;
 
     #[test]
     fn storage_read_after_write_page() {
-        let mut storage = Storage::open(test_path()).unwrap();
+        let storage_path = NamedTempFile::new().unwrap();
+        let mut storage = Storage::open(storage_path).unwrap();
         let page = &mut Page::new();
 
         // write

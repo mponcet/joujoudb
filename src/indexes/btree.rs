@@ -311,10 +311,12 @@ mod tests {
 
     use std::{collections::VecDeque, sync::Arc};
 
+    use tempfile::NamedTempFile;
+
     const NR_KEYS: Key = 1000;
 
     fn create_btree() -> BTree {
-        let storage_path = format!("/tmp/joujoudb{}", uuid::Uuid::new_v4());
+        let storage_path = NamedTempFile::new().unwrap();
         let storage = Storage::open(storage_path).unwrap();
         BTree::try_new(storage).unwrap()
     }
