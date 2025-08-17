@@ -88,7 +88,7 @@ impl BTree {
     /// Returns a `Result` containing a read-only reference to the leaf page, or a `BTreeError` on failure.
     fn find_leaf_page(&self, key: Key) -> Result<PageRef<'_>, BTreeError> {
         let mut page_ref = {
-            let superblock_ref = self.page_cache.get_page_mut(PAGE_RESERVED)?;
+            let superblock_ref = self.page_cache.get_page(PAGE_RESERVED)?;
             let superblock = superblock_ref.btree_superblock();
             self.page_cache
                 .get_page(superblock.root_page_id)
@@ -107,6 +107,51 @@ impl BTree {
                 }
                 BTreePageType::Leaf => {
                     return Ok(page_ref);
+                }
+            }
+        }
+    }
+
+    /// Finds the leaf page that should contain the given key.
+    ///
+    /// Returns a `Result` containing a mutable reference to the leaf page, or a `BTreeError` on failure.
+    fn find_leaf_page_mut(&self, key: Key) -> Result<PageRefMut<'_>, BTreeError> {
+        let mut parent_page_ref = {
+            let superblock_ref = self.page_cache.get_page(PAGE_RESERVED)?;
+            let superblock = superblock_ref.btree_superblock();
+            let page_ref = self
+                .page_cache
+                .get_page(superblock.root_page_id)
+                .map_err(BTreeError::PageCache)?;
+
+            if btree_get_page_type(page_ref.page()).is_leaf() {
+                drop(page_ref);
+                return self
+                    .page_cache
+                    .get_page_mut(superblock.root_page_id)
+                    .map_err(BTreeError::PageCache);
+            }
+
+            page_ref
+        };
+
+        loop {
+            let inner_page = parent_page_ref.btree_inner_page();
+            let child_page_id = inner_page.get(key);
+            let child_page_ref = self
+                .page_cache
+                .get_page(child_page_id)
+                .map_err(BTreeError::PageCache)?;
+
+            match btree_get_page_type(child_page_ref.page()) {
+                BTreePageType::Inner => parent_page_ref = child_page_ref,
+                BTreePageType::Leaf => {
+                    let child_page_id = child_page_ref.metadata().page_id;
+                    drop(child_page_ref);
+                    return self
+                        .page_cache
+                        .get_page_mut(child_page_id)
+                        .map_err(BTreeError::PageCache);
                 }
             }
         }
@@ -131,15 +176,15 @@ impl BTree {
     ) -> Result<Option<(Key, PageId)>, BTreeError> {
         let inner_page = inner_page_ref.btree_inner_page_mut();
 
-        let children_page_id = inner_page.get(key);
-        let mut children_page_ref = self
+        let child_page_id = inner_page.get(key);
+        let mut child_page_ref = self
             .page_cache
-            .get_page_mut(children_page_id)
+            .get_page_mut(child_page_id)
             .map_err(BTreeError::PageCache)?;
 
-        let result = match btree_get_page_type(children_page_ref.page()) {
-            BTreePageType::Inner => self.insert_inner_r(&mut children_page_ref, key, value)?,
-            BTreePageType::Leaf => self.insert_leaf(&mut children_page_ref, key, value)?,
+        let result = match btree_get_page_type(child_page_ref.page()) {
+            BTreePageType::Inner => self.insert_inner_r(&mut child_page_ref, key, value)?,
+            BTreePageType::Leaf => self.insert_leaf(&mut child_page_ref, key, value)?,
         };
 
         if let Some((split_key, rhs_page_id)) = result
@@ -189,6 +234,22 @@ impl BTree {
     ///
     /// Returns an empty `Result` if successful, or a `BTreeError` on failure.
     pub fn insert(&self, key: Key, record_id: RecordId) -> Result<(), BTreeError> {
+        // Fast path: get an exclusive lock on the leaf, every parent has its lock released.
+        // This optimization is useful for mixed workload. For write-heavy applications
+        // the performance decreases slightly : if a split occurs in the leaf we need to insert
+        // the key via the slow path.
+        let mut leaf_page_ref = self.find_leaf_page_mut(key)?;
+        let leaf_page = leaf_page_ref.btree_leaf_page_mut();
+        if leaf_page.insert(key, record_id).is_some() {
+            drop(leaf_page_ref);
+            self.insert_slow_path(key, record_id)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn insert_slow_path(&self, key: Key, record_id: RecordId) -> Result<(), BTreeError> {
+        // Slow path: we descend in the tree, getting an exclusive lock at every step.
         let mut superblock_ref = self.page_cache.get_page_mut(PAGE_RESERVED)?;
         let superblock = superblock_ref.btree_superblock_mut();
         let root_page_id = superblock.root_page_id;
@@ -216,38 +277,13 @@ impl BTree {
         Ok(())
     }
 
-    fn delete_r(&self, page_ref: &mut PageRefMut<'_>, key: Key) -> Result<(), BTreeError> {
-        match btree_get_page_type(page_ref.page()) {
-            BTreePageType::Inner => {
-                let inner_page = page_ref.btree_inner_page();
-                let children_page_id = inner_page.get(key);
-                let mut children_page_ref = self
-                    .page_cache
-                    .get_page_mut(children_page_id)
-                    .map_err(BTreeError::PageCache)?;
-                self.delete_r(&mut children_page_ref, key)
-            }
-            BTreePageType::Leaf => {
-                let leaf_page = page_ref.btree_leaf_page_mut();
-                let result = leaf_page.delete(key).map_err(BTreeError::Page);
-                page_ref.metadata_mut().set_dirty();
-                result
-            }
-        }
-    }
-
     /// Deletes a key-value pair from the B-tree.
     ///
     /// Returns an empty `Result` if successful, or a `BTreeError` if the key is not found.
     pub fn delete(&self, key: Key) -> Result<(), BTreeError> {
-        let mut root_page_ref = {
-            let superblock_ref = self.page_cache.get_page_mut(PAGE_RESERVED)?;
-            let superblock = superblock_ref.btree_superblock();
-            self.page_cache
-                .get_page_mut(superblock.root_page_id)
-                .map_err(BTreeError::PageCache)?
-        };
-        self.delete_r(&mut root_page_ref, key)
+        let mut leaf_page_ref = self.find_leaf_page_mut(key)?;
+        let leaf_page = leaf_page_ref.btree_leaf_page_mut();
+        leaf_page.delete(key).map_err(BTreeError::Page)
     }
 
     /// Creates an iterator over a range of keys.
