@@ -12,6 +12,16 @@ pub enum BTreePageType {
     Leaf,
 }
 
+impl BTreePageType {
+    pub fn is_inner(&self) -> bool {
+        matches!(self, BTreePageType::Inner)
+    }
+
+    pub fn is_leaf(&self) -> bool {
+        matches!(self, BTreePageType::Leaf)
+    }
+}
+
 #[derive(FromBytes, KnownLayout, Immutable)]
 #[repr(C)]
 struct BTreePageHeader {
