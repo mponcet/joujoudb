@@ -2,7 +2,7 @@ use crate::cache::memcache::MemCache;
 use crate::pages::PageId;
 use crate::storage::{Storage, StorageError};
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use super::memcache::{MemCacheError, PageRef, PageRefMut};
 use thiserror::Error;
@@ -41,7 +41,7 @@ impl PageCache {
     ///
     /// Returns a mutable reference to the new page.
     pub fn new_page(&self) -> Result<PageRefMut<'_>, PageCacheError> {
-        let mut storage = self.storage.lock().unwrap();
+        let mut storage = self.storage.lock();
         let page_id = storage.allocate_page();
 
         // try evict a page if the memory cache is full
@@ -73,7 +73,7 @@ impl PageCache {
                 .map_err(PageCacheError::MemCache)?;
 
             {
-                let mut storage = self.storage.lock().unwrap();
+                let mut storage = self.storage.lock();
                 storage
                     .read_page(page_id, new_page_ref.page_mut())
                     .map_err(PageCacheError::Storage)?;
@@ -95,7 +95,7 @@ impl PageCache {
                 .new_page_mut(page_id)
                 .map_err(PageCacheError::MemCache)?;
 
-            let mut storage = self.storage.lock().unwrap();
+            let mut storage = self.storage.lock();
             storage
                 .read_page(page_id, new_page_ref.page_mut())
                 .map_err(PageCacheError::Storage)?;
