@@ -68,7 +68,7 @@ impl BTree {
     ///
     /// Returns a `Result` containing the new `BTree` instance, or a `BTreeError` on failure.
     pub fn try_new(storage: Storage) -> Result<Self, BTreeError> {
-        let page_cache = PageCache::new(storage);
+        let page_cache = PageCache::try_new(storage).map_err(BTreeError::PageCache)?;
         let mut superblock_ref = page_cache.get_page_mut(PAGE_RESERVED)?;
         let superblock = superblock_ref.btree_superblock_mut();
         let mut root_page_ref = page_cache.new_page().map_err(BTreeError::PageCache)?;

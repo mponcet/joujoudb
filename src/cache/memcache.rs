@@ -1,34 +1,27 @@
 use crate::cache::{DEFAULT_PAGE_CACHE_SIZE, EvictionPolicy, lru::LRU};
-use crate::pages::{BTreeInnerPage, BTreeLeafPage, BTreeSuperBlock};
+use crate::pages::{BTreeInnerPage, BTreeLeafPage, BTreeSuperBlock, PAGE_INVALID, PAGE_SIZE};
 use crate::pages::{HeapPage, Page, PageId, PageMetadata};
 
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, VecDeque};
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
+use std::slice;
 use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use memmap2::MmapMut;
 use thiserror::Error;
 
-// UnsafeCell<Page> has the same in-memory layout as Page.
-// We could use RwLock<Page> but RwLock metadata would be stored
-// next to Page data. This way we make sure pages are contiguous
-// in-memory and no RwLock metadata is prepended or appended.
-struct UnsafePage(UnsafeCell<Page>);
 // SAFETY:
-// Shared and exclusive access are handled with a separate RwLock stored
-// in PageLatch, so it is safe to mark UnsafePage as Sync.
+// 1. Pages are stored in a memory-mapped region and accessed through raw pointers.
+// 2. Shared and exclusive access to pages and pages metadata are handled with a separate RwLock stored
+//    in PageLatch.
+// 3. Memory mapping is managed by memmap2 which ensures the memory is valid for the lifetime
+//    of the MmapMut object.
+// 4. Page references are only created with proper synchronization through the page latch.
+
 // In the future, consider looking at: https://github.com/rust-lang/rust/issues/95439
-unsafe impl Sync for UnsafePage {}
-
-impl Default for UnsafePage {
-    fn default() -> Self {
-        Self(UnsafeCell::new(Page::new()))
-    }
-}
-
 struct UnsafePageMetadata(UnsafeCell<PageMetadata>);
-// SAFETY: see UnsafePage
 unsafe impl Sync for UnsafePageMetadata {}
 
 impl UnsafePageMetadata {
@@ -40,10 +33,6 @@ impl UnsafePageMetadata {
 struct PageLatch {
     latch: RwLock<()>,
 }
-
-// struct UnsafePageLock(UnsafeCell<PageMetadata>);
-// SAFETY: see UnsafePage
-// unsafe impl Sync for UnsafePageMetadata {}
 
 impl Default for PageLatch {
     fn default() -> Self {
@@ -225,7 +214,7 @@ impl Drop for PageRefMut<'_> {
 }
 
 pub struct MemCache {
-    pages: Box<[UnsafePage]>,
+    pages: MmapMut,
     pages_metadata: Box<[UnsafePageMetadata]>,
     pages_latch: Box<[PageLatch]>,
     page_table: Mutex<PageTable>,
@@ -238,39 +227,52 @@ pub enum MemCacheError {
     Full,
     #[error("page not found")]
     PageNotFound,
+    #[error("mmap failed")]
+    MmapFailed(#[from] std::io::Error),
 }
 
 impl MemCache {
-    pub fn new() -> Self {
-        let pages = std::iter::repeat_with(UnsafePage::default).take(DEFAULT_PAGE_CACHE_SIZE);
-        let pages_metadata =
-            // FIXME: create an invalid page ?
-            std::iter::repeat_with(|| UnsafePageMetadata::new(0)).take(DEFAULT_PAGE_CACHE_SIZE);
+    pub fn try_new() -> Result<Self, MemCacheError> {
+        let pages = MmapMut::map_anon(DEFAULT_PAGE_CACHE_SIZE * PAGE_SIZE)
+            .map_err(MemCacheError::MmapFailed)?;
+        let pages_metadata = std::iter::repeat_with(|| UnsafePageMetadata::new(PAGE_INVALID))
+            .take(DEFAULT_PAGE_CACHE_SIZE);
         let pages_lock = std::iter::repeat_with(PageLatch::default).take(DEFAULT_PAGE_CACHE_SIZE);
-        Self {
-            pages: Box::from_iter(pages),
+
+        Ok(Self {
+            pages,
             pages_metadata: Box::from_iter(pages_metadata),
             pages_latch: Box::from_iter(pages_lock),
             page_table: Mutex::new(PageTable::default()),
             eviction_policy: Box::new(Mutex::new(LRU::new())),
-        }
+        })
     }
 
-    unsafe fn get_page_ref(&self, idx: usize) -> &Page {
-        unsafe { &*(self.pages[idx].0.get()) }
+    fn get_page_ref(&self, idx: usize) -> &Page {
+        let pages = unsafe {
+            std::slice::from_raw_parts(self.pages.as_ptr() as *const Page, DEFAULT_PAGE_CACHE_SIZE)
+        };
+
+        debug_assert!(idx < DEFAULT_PAGE_CACHE_SIZE);
+        unsafe { pages.get_unchecked(idx) }
     }
 
     #[allow(clippy::mut_from_ref)]
-    unsafe fn get_page_ref_mut(&self, idx: usize) -> &mut Page {
-        unsafe { &mut *(self.pages[idx].0.get()) }
+    fn get_page_ref_mut(&self, idx: usize) -> &mut Page {
+        let pages: &mut [Page] = unsafe {
+            slice::from_raw_parts_mut(self.pages.as_ptr() as *mut Page, DEFAULT_PAGE_CACHE_SIZE)
+        };
+
+        debug_assert!(idx < DEFAULT_PAGE_CACHE_SIZE);
+        unsafe { pages.get_unchecked_mut(idx) }
     }
 
-    unsafe fn get_metadata_ref(&self, idx: usize) -> &PageMetadata {
+    fn get_metadata_ref(&self, idx: usize) -> &PageMetadata {
         unsafe { &*(self.pages_metadata[idx].0.get()) }
     }
 
     #[allow(clippy::mut_from_ref)]
-    unsafe fn get_metadata_ref_mut(&self, idx: usize) -> &mut PageMetadata {
+    fn get_metadata_ref_mut(&self, idx: usize) -> &mut PageMetadata {
         unsafe { &mut *(self.pages_metadata[idx].0.get()) }
     }
 
@@ -286,8 +288,8 @@ impl MemCache {
 
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.read().unwrap();
-        let page = unsafe { self.get_page_ref(idx) };
-        let metadata = unsafe { self.get_metadata_ref(idx) };
+        let page = self.get_page_ref(idx);
+        let metadata = self.get_metadata_ref(idx);
         metadata.pin();
 
         {
@@ -316,8 +318,8 @@ impl MemCache {
 
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.write().unwrap();
-        let page = unsafe { self.get_page_ref_mut(idx) };
-        let metadata = unsafe { self.get_metadata_ref_mut(idx) };
+        let page = self.get_page_ref_mut(idx);
+        let metadata = self.get_metadata_ref_mut(idx);
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
 
@@ -346,8 +348,8 @@ impl MemCache {
 
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.write().unwrap();
-        let page = unsafe { self.get_page_ref_mut(idx) };
-        let metadata = unsafe { self.get_metadata_ref_mut(idx) };
+        let page = self.get_page_ref_mut(idx);
+        let metadata = self.get_metadata_ref_mut(idx);
         *metadata = PageMetadata::new(page_id);
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
@@ -383,7 +385,7 @@ impl MemCache {
 
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.write().unwrap();
-        let metadata = unsafe { self.get_metadata_ref(idx) };
+        let metadata = self.get_metadata_ref(idx);
         assert_eq!(metadata.get_pin_counter(), 0);
 
         self.eviction_policy.lock().unwrap().remove(page_id);
@@ -414,7 +416,7 @@ mod tests {
 
     #[test]
     fn high_contention_scenario() {
-        let cache = Arc::new(MemCache::new());
+        let cache = Arc::new(MemCache::try_new().unwrap());
 
         let mut handles = vec![];
 
