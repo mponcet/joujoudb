@@ -1,4 +1,5 @@
-use crate::cache::{DEFAULT_PAGE_CACHE_SIZE, EvictionPolicy, lru::LRU};
+use crate::cache::{EvictionPolicy, lru::LRU};
+use crate::config::CONFIG;
 use crate::pages::{BTreeInnerPage, BTreeLeafPage, BTreeSuperBlock, PAGE_INVALID, PAGE_SIZE};
 use crate::pages::{HeapPage, Page, PageId, PageMetadata};
 
@@ -51,7 +52,7 @@ impl Default for PageTable {
     fn default() -> Self {
         Self {
             map: HashMap::new(),
-            free_list: VecDeque::from_iter(0..DEFAULT_PAGE_CACHE_SIZE),
+            free_list: VecDeque::from_iter(0..CONFIG.PAGE_CACHE_SIZE),
         }
     }
 }
@@ -233,11 +234,11 @@ pub enum MemCacheError {
 
 impl MemCache {
     pub fn try_new() -> Result<Self, MemCacheError> {
-        let pages = MmapMut::map_anon(DEFAULT_PAGE_CACHE_SIZE * PAGE_SIZE)
+        let pages = MmapMut::map_anon(CONFIG.PAGE_CACHE_SIZE * PAGE_SIZE)
             .map_err(MemCacheError::MmapFailed)?;
         let pages_metadata = std::iter::repeat_with(|| UnsafePageMetadata::new(PAGE_INVALID))
-            .take(DEFAULT_PAGE_CACHE_SIZE);
-        let pages_lock = std::iter::repeat_with(PageLatch::default).take(DEFAULT_PAGE_CACHE_SIZE);
+            .take(CONFIG.PAGE_CACHE_SIZE);
+        let pages_lock = std::iter::repeat_with(PageLatch::default).take(CONFIG.PAGE_CACHE_SIZE);
 
         Ok(Self {
             pages,
@@ -250,20 +251,20 @@ impl MemCache {
 
     fn get_page_ref(&self, idx: usize) -> &Page {
         let pages = unsafe {
-            std::slice::from_raw_parts(self.pages.as_ptr() as *const Page, DEFAULT_PAGE_CACHE_SIZE)
+            std::slice::from_raw_parts(self.pages.as_ptr() as *const Page, CONFIG.PAGE_CACHE_SIZE)
         };
 
-        debug_assert!(idx < DEFAULT_PAGE_CACHE_SIZE);
+        debug_assert!(idx < CONFIG.PAGE_CACHE_SIZE);
         unsafe { pages.get_unchecked(idx) }
     }
 
     #[allow(clippy::mut_from_ref)]
     fn get_page_ref_mut(&self, idx: usize) -> &mut Page {
         let pages: &mut [Page] = unsafe {
-            slice::from_raw_parts_mut(self.pages.as_ptr() as *mut Page, DEFAULT_PAGE_CACHE_SIZE)
+            slice::from_raw_parts_mut(self.pages.as_ptr() as *mut Page, CONFIG.PAGE_CACHE_SIZE)
         };
 
-        debug_assert!(idx < DEFAULT_PAGE_CACHE_SIZE);
+        debug_assert!(idx < CONFIG.PAGE_CACHE_SIZE);
         unsafe { pages.get_unchecked_mut(idx) }
     }
 
@@ -423,15 +424,14 @@ mod tests {
         for thread_id in 0..16 {
             let cache = cache.clone();
             let handle = std::thread::spawn(move || {
-                for j in 0..DEFAULT_PAGE_CACHE_SIZE / 2 {
+                for j in 0..CONFIG.PAGE_CACHE_SIZE / 2 {
                     let page_id = j as PageId;
                     match thread_id {
                         0 => {
                             let _ = cache.new_page_mut(page_id);
                         }
                         1 => {
-                            let _ =
-                                cache.new_page_mut(DEFAULT_PAGE_CACHE_SIZE as u32 / 2 + page_id);
+                            let _ = cache.new_page_mut(CONFIG.PAGE_CACHE_SIZE as u32 / 2 + page_id);
                         }
                         2..6 => {
                             let _ = cache.get_page_mut(page_id);
