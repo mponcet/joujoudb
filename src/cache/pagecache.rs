@@ -28,11 +28,11 @@ pub struct PageCache {
 
 impl PageCache {
     /// Creates a new `PageCache` with the given storage backend.
-    pub fn new(storage: Storage) -> Self {
-        Self {
+    pub fn try_new(storage: Storage) -> Result<Self, PageCacheError> {
+        Ok(Self {
             storage: Mutex::new(storage),
-            mem_cache: MemCache::new(),
-        }
+            mem_cache: MemCache::try_new().map_err(PageCacheError::MemCache)?,
+        })
     }
 
     /// Creates a new page, both in the cache and on disk.
@@ -119,7 +119,7 @@ mod tests {
     fn evict_page_lru() {
         let storage_path = NamedTempFile::new().unwrap();
         let storage = Storage::open(storage_path).unwrap();
-        let page_cache = PageCache::new(storage);
+        let page_cache = PageCache::try_new(storage).unwrap();
 
         // Page 0 is reserved and not allocatable via new_page().
         for _ in 1..DEFAULT_PAGE_CACHE_SIZE {
