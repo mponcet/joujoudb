@@ -3,12 +3,12 @@ use crate::config::CONFIG;
 use crate::pages::{BTreeInnerPage, BTreeLeafPage, BTreeSuperBlock, PAGE_INVALID, PAGE_SIZE};
 use crate::pages::{HeapPage, Page, PageId, PageMetadata};
 
+use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, VecDeque};
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::slice;
-use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use memmap2::MmapMut;
 use thiserror::Error;
@@ -195,7 +195,6 @@ impl Drop for PageRef<'_> {
         if self.metadata.get_pin_counter() == 0 {
             self.eviction_policy
                 .lock()
-                .unwrap()
                 .set_evictable(self.metadata.page_id)
         }
     }
@@ -208,7 +207,6 @@ impl Drop for PageRefMut<'_> {
         if self.metadata.get_pin_counter() == 0 {
             self.eviction_policy
                 .lock()
-                .unwrap()
                 .set_evictable(self.metadata.page_id);
         }
     }
@@ -279,7 +277,7 @@ impl MemCache {
 
     pub fn get_page(&self, page_id: PageId) -> Result<PageRef<'_>, MemCacheError> {
         let idx = {
-            let page_table = self.page_table.lock().unwrap();
+            let page_table = self.page_table.lock();
             page_table
                 .map
                 .get(&page_id)
@@ -288,13 +286,13 @@ impl MemCache {
         };
 
         let latch = &self.pages_latch[idx].latch;
-        let _guard = latch.read().unwrap();
+        let _guard = latch.read();
         let page = self.get_page_ref(idx);
         let metadata = self.get_metadata_ref(idx);
         metadata.pin();
 
         {
-            let mut eviction_policy = self.eviction_policy.lock().unwrap();
+            let mut eviction_policy = self.eviction_policy.lock();
             eviction_policy.record_access(page_id);
             eviction_policy.set_unevictable(page_id);
         }
@@ -309,7 +307,7 @@ impl MemCache {
 
     pub fn get_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, MemCacheError> {
         let idx = {
-            let page_table = self.page_table.lock().unwrap();
+            let page_table = self.page_table.lock();
             page_table
                 .map
                 .get(&page_id)
@@ -318,14 +316,14 @@ impl MemCache {
         };
 
         let latch = &self.pages_latch[idx].latch;
-        let _guard = latch.write().unwrap();
+        let _guard = latch.write();
         let page = self.get_page_ref_mut(idx);
         let metadata = self.get_metadata_ref_mut(idx);
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
 
         {
-            let mut eviction_policy = self.eviction_policy.lock().unwrap();
+            let mut eviction_policy = self.eviction_policy.lock();
             eviction_policy.record_access(page_id);
             eviction_policy.set_unevictable(page_id);
         }
@@ -340,7 +338,7 @@ impl MemCache {
 
     pub fn new_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, MemCacheError> {
         let idx = {
-            let mut page_table = self.page_table.lock().unwrap();
+            let mut page_table = self.page_table.lock();
             page_table
                 .free_list
                 .pop_front()
@@ -348,7 +346,7 @@ impl MemCache {
         };
 
         let latch = &self.pages_latch[idx].latch;
-        let _guard = latch.write().unwrap();
+        let _guard = latch.write();
         let page = self.get_page_ref_mut(idx);
         let metadata = self.get_metadata_ref_mut(idx);
         *metadata = PageMetadata::new(page_id);
@@ -356,13 +354,13 @@ impl MemCache {
         assert_eq!(old_counter, 0);
 
         {
-            let mut page_table = self.page_table.lock().unwrap();
+            let mut page_table = self.page_table.lock();
             assert!(!page_table.map.contains_key(&page_id));
             page_table.map.insert(page_id, idx);
         }
 
         {
-            let mut eviction_policy = self.eviction_policy.lock().unwrap();
+            let mut eviction_policy = self.eviction_policy.lock();
             eviction_policy.record_access(page_id);
             eviction_policy.set_unevictable(page_id);
         }
@@ -377,7 +375,7 @@ impl MemCache {
 
     pub fn remove_page(&self, page_id: PageId) -> Result<(), MemCacheError> {
         let idx = {
-            let mut page_table = self.page_table.lock().unwrap();
+            let mut page_table = self.page_table.lock();
             page_table
                 .map
                 .remove(&page_id)
@@ -385,13 +383,13 @@ impl MemCache {
         };
 
         let latch = &self.pages_latch[idx].latch;
-        let _guard = latch.write().unwrap();
+        let _guard = latch.write();
         let metadata = self.get_metadata_ref(idx);
         assert_eq!(metadata.get_pin_counter(), 0);
 
-        self.eviction_policy.lock().unwrap().remove(page_id);
+        self.eviction_policy.lock().remove(page_id);
         {
-            let mut page_table = self.page_table.lock().unwrap();
+            let mut page_table = self.page_table.lock();
             page_table.free_list.push_back(idx);
         }
 
@@ -399,10 +397,10 @@ impl MemCache {
     }
 
     pub fn evict(&self) -> Option<PageId> {
-        let page_table = self.page_table.lock().unwrap();
+        let page_table = self.page_table.lock();
 
         if page_table.free_list.is_empty() {
-            self.eviction_policy.lock().unwrap().evict()
+            self.eviction_policy.lock().evict()
         } else {
             None
         }
