@@ -1,4 +1,4 @@
-use crate::pages::{PAGE_SIZE, Page};
+use crate::pages::{PAGE_SIZE, Page, PageId};
 use crate::tuple::{Tuple, TupleRef};
 
 use thiserror::Error;
@@ -7,6 +7,20 @@ use zerocopy_derive::*;
 
 /// The identifier for a slot in a heap page.
 pub type HeapPageSlotId = u16;
+
+// The identifier for a unique entry in a table
+#[derive(Copy, Clone, FromBytes, KnownLayout, Immutable)]
+#[repr(C)]
+pub struct RecordId {
+    pub page_id: PageId,
+    pub slot_id: HeapPageSlotId,
+}
+
+impl RecordId {
+    pub fn new(page_id: PageId, slot_id: HeapPageSlotId) -> Self {
+        Self { page_id, slot_id }
+    }
+}
 
 /// The header of a heap page, containing metadata about the page.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
@@ -189,16 +203,14 @@ impl HeapPage {
     /// Retrieves a tuple from the heap page.
     ///
     /// Returns a `Result` containing a `Tuple` reference, or a `HeapPageError` if the slot is not found or has been deleted.
-    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<Tuple<'_>, HeapPageError> {
+    pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<&TupleRef, HeapPageError> {
         let slot = self.get_slot(slot_id).ok_or(HeapPageError::SlotNotFound)?;
         let (idx, len) = (slot.offset as usize, slot.len as usize);
 
         if slot.is_deleted() {
             Err(HeapPageError::SlotDeleted)
         } else {
-            Ok(Tuple::Ref(
-                TupleRef::ref_from_bytes(&self.data[idx..idx + len]).unwrap(),
-            ))
+            Ok(TupleRef::ref_from_bytes(&self.data[idx..idx + len]).unwrap())
         }
     }
 }

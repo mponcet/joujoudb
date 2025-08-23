@@ -104,6 +104,11 @@ impl PageCache {
             Ok(new_page_ref)
         }
     }
+
+    /// Retrieves the last page id from the storage backend.
+    pub fn last_page_id(&self) -> PageId {
+        self.storage.lock().last_page_id()
+    }
 }
 
 #[cfg(test)]
