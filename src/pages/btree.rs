@@ -1,4 +1,4 @@
-use crate::pages::{HeapPageSlotId, PAGE_INVALID, PAGE_SIZE, Page, PageId};
+use crate::pages::{HeapPageSlotId, PAGE_INVALID, PAGE_SIZE, Page, PageId, RecordId};
 
 use thiserror::Error;
 use zerocopy::FromBytes;
@@ -42,19 +42,6 @@ pub fn btree_get_page_type(page: &Page) -> BTreePageType {
 }
 
 pub type Key = u32;
-
-#[derive(Copy, Clone, FromBytes, KnownLayout, Immutable)]
-#[repr(C)]
-pub struct RecordId {
-    page_id: PageId,
-    slot_id: HeapPageSlotId,
-}
-
-impl RecordId {
-    pub fn new(page_id: PageId, slot_id: HeapPageSlotId) -> Self {
-        Self { page_id, slot_id }
-    }
-}
 
 #[derive(FromBytes, KnownLayout, Immutable)]
 #[repr(C)]

@@ -92,6 +92,14 @@ impl Storage {
         self.file.write_all_at(&[0; PAGE_SIZE], offset).unwrap();
         (offset / PAGE_SIZE as u64) as PageId
     }
+
+    /// Retreives the last allocated page id.
+    ///
+    /// TODO: implement a free space map for more efficent storage.
+    pub fn last_page_id(&self) -> PageId {
+        let offset = self.file.metadata().unwrap().len();
+        (offset / PAGE_SIZE as u64) as PageId - 1
+    }
 }
 
 #[cfg(test)]
