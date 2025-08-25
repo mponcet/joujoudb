@@ -1,6 +1,6 @@
 use crate::cache::{PageCache, PageCacheError};
 use crate::pages::{HeapPageError, RecordId};
-use crate::schema::Schema;
+use crate::sql::schema::Schema;
 use crate::storage::Storage;
 use crate::tuple::Tuple;
 
@@ -40,7 +40,7 @@ impl Table {
         Ok(heappage
             .get_tuple(record_id.slot_id)
             .map_err(TableError::HeapPage)?
-            .to_owned())
+            .to_owned(&self.schema))
     }
 
     pub fn insert_tuple(&self, tuple: &Tuple) -> Result<(), TableError> {

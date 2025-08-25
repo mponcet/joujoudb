@@ -1,20 +1,11 @@
 use thiserror::Error;
 use zerocopy_derive::*;
 
-// Must be the same size as the null bitmap in tuples
-const SCHEMA_MAX_COLUMNS: usize = 64;
-
-#[derive(Copy, Clone, Default, TryFromBytes, IntoBytes, KnownLayout, Immutable)]
-#[repr(C)]
-pub enum DataType {
-    #[default]
-    Unknown,
-    Char,
-    Varchar,
-    Integer,
-    Date,
-    Time,
-    Timestamp,
+#[derive(Copy, Clone)]
+pub enum ColumnType {
+    Char(usize),
+    VarChar,
+    BigInt,
 }
 
 #[derive(Copy, Clone, Default, TryFromBytes, IntoBytes, KnownLayout, Immutable)]
@@ -54,12 +45,35 @@ impl Constraints {
 }
 
 pub struct Column {
-    data_type: DataType,
-    constraints: Constraints,
+    pub column_type: ColumnType,
+    pub constraints: Constraints,
+}
+
+impl Column {
+    pub fn new(column_type: ColumnType, constraints: Constraints) -> Self {
+        Self {
+            column_type,
+            constraints,
+        }
+    }
 }
 
 pub struct Schema {
     columns: Vec<Column>,
+}
+
+impl Schema {
+    pub fn new(columns: Vec<Column>) -> Self {
+        Self { columns }
+    }
+
+    pub fn num_columns(&self) -> usize {
+        self.columns.len()
+    }
+
+    pub fn columns(&self) -> &[Column] {
+        self.columns.as_slice()
+    }
 }
 
 #[derive(Debug, Error)]
@@ -81,11 +95,11 @@ mod tests {
     fn test_schema() -> Schema {
         let columns = vec![
             Column {
-                data_type: DataType::Integer,
+                column_type: ColumnType::BigInt,
                 constraints: Constraints::new(true, false),
             },
             Column {
-                data_type: DataType::Char,
+                column_type: ColumnType::Char(32),
                 constraints: Constraints::new(false, false),
             },
         ];
