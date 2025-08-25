@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn evict_page_lru() {
         let storage_path = NamedTempFile::new().unwrap();
-        let storage = Storage::open(storage_path).unwrap();
+        let storage = Storage::create(storage_path).unwrap();
         let page_cache = PageCache::try_new(storage).unwrap();
 
         // Page 0 is reserved and not allocatable via new_page().
