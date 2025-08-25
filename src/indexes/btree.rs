@@ -353,7 +353,7 @@ mod tests {
 
     fn create_btree() -> BTree {
         let storage_path = NamedTempFile::new().unwrap();
-        let storage = Storage::open(storage_path).unwrap();
+        let storage = Storage::create(storage_path).unwrap();
         BTree::try_new(storage).unwrap()
     }
 
