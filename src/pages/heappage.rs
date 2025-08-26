@@ -7,10 +7,27 @@ use zerocopy::{little_endian::U16, *};
 use zerocopy_derive::*;
 
 /// The identifier for a slot in a heap page.
-pub type HeapPageSlotId = u16;
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, FromBytes, IntoBytes, KnownLayout, Immutable,
+)]
+pub struct HeapPageSlotId(U16);
+
+impl HeapPageSlotId {
+    pub fn new(slot_id: u16) -> Self {
+        Self(U16::new(slot_id))
+    }
+
+    pub fn get(&self) -> u16 {
+        self.0.get()
+    }
+
+    pub fn set(&mut self, slot_id: u16) {
+        self.0.set(slot_id);
+    }
+}
 
 // The identifier for a unique entry in a table
-#[derive(Copy, Clone, FromBytes, KnownLayout, Immutable)]
+#[derive(Copy, Clone, FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct RecordId {
     pub page_id: PageId,
@@ -24,7 +41,9 @@ impl RecordId {
 }
 
 /// The header of a heap page, containing metadata about the page.
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, FromBytes, IntoBytes, KnownLayout, Immutable,
+)]
 #[repr(C)]
 struct HeapPageHeader {
     num_slots: HeapPageSlotId,
@@ -108,10 +127,13 @@ pub enum HeapPageError {
     SlotDeleted,
 }
 
+#[cfg(test)]
 impl Default for HeapPage {
     fn default() -> Self {
         Self {
-            header: HeapPageHeader { num_slots: 0 },
+            header: HeapPageHeader {
+                num_slots: HeapPageSlotId::new(0),
+            },
             data: [0; Self::DATA_SIZE],
         }
     }
@@ -125,24 +147,24 @@ impl HeapPage {
     /// The maximum size of a tuple that can be stored in a heap page.
     pub const MAX_TUPLE_SIZE: usize = Self::DATA_SIZE - Self::SLOT_SIZE;
 
-    /// Creates a new, empty `HeapPage`.
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
 
     #[inline]
     fn last_slot_id(&self) -> Option<HeapPageSlotId> {
-        if self.header.num_slots == 0 {
+        if self.header.num_slots.get() == 0 {
             return None;
         }
 
-        Some(self.header.num_slots - 1)
+        Some(HeapPageSlotId::new(self.header.num_slots.get() - 1))
     }
 
     #[inline]
     fn last_slot_offset(&self) -> Option<usize> {
         self.last_slot_id()
-            .map(|slot_id| slot_id as usize * Self::SLOT_SIZE)
+            .map(|slot_id| slot_id.get() as usize * Self::SLOT_SIZE)
     }
 
     #[inline]
@@ -156,7 +178,7 @@ impl HeapPage {
             return None;
         }
 
-        let idx = slot_id as usize * Self::SLOT_SIZE;
+        let idx = slot_id.get() as usize * Self::SLOT_SIZE;
         let bytes = &self.data[idx..idx + Self::SLOT_SIZE];
         HeapPageSlot::ref_from_bytes(bytes).ok()
     }
@@ -166,7 +188,7 @@ impl HeapPage {
             return None;
         }
 
-        let idx = slot_id as usize * Self::SLOT_SIZE;
+        let idx = slot_id.get() as usize * Self::SLOT_SIZE;
         let bytes = &mut self.data[idx..idx + Self::SLOT_SIZE];
         HeapPageSlot::mut_from_bytes(bytes).ok()
     }
@@ -174,7 +196,7 @@ impl HeapPage {
     #[inline]
     fn free_space(&self) -> usize {
         self.last_tuple_offset().unwrap_or(Self::DATA_SIZE)
-            - self.header.num_slots as usize * Self::SLOT_SIZE
+            - self.header.num_slots.get() as usize * Self::SLOT_SIZE
     }
 
     // free space for both the slot and the tuple
@@ -194,13 +216,13 @@ impl HeapPage {
             tuple.write_bytes_to(&mut self.data[offset..]);
 
             // insert slot
-            self.header.num_slots += 1;
+            self.header.num_slots.set(self.header.num_slots.get() + 1);
             let slot = HeapPageSlot::new(offset, tuple_len);
             let idx = self.last_slot_offset().unwrap();
             slot.write_to(&mut self.data[idx..idx + Self::SLOT_SIZE])
                 .unwrap();
 
-            Ok(self.header.num_slots - 1)
+            Ok(HeapPageSlotId::new(self.header.num_slots.get() - 1))
         } else {
             Err(HeapPageError::NoFreeSpace)
         }

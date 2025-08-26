@@ -345,16 +345,22 @@ impl<'btree> Iterator for BTreeRangeIterator<'btree> {
 mod tests {
     use super::*;
 
+    use crate::pages::HeapPageSlotId;
+
     use std::{collections::VecDeque, sync::Arc};
 
     use tempfile::NamedTempFile;
 
-    const NR_KEYS: Key = 1000;
+    const NR_KEYS: usize = 1000;
 
     fn create_btree() -> BTree {
         let storage_path = NamedTempFile::new().unwrap();
         let storage = Storage::create(storage_path).unwrap();
         BTree::try_new(storage).unwrap()
+    }
+
+    fn make_record() -> RecordId {
+        RecordId::new(PageId::new(0), HeapPageSlotId::new(0))
     }
 
     #[allow(dead_code)]
@@ -377,7 +383,8 @@ mod tests {
                     BTreePageType::Inner => {
                         let inner_page = page_ref.btree_inner_page();
                         print!(
-                            " Inner({page_id}): keys={:?} pointers={:?} |",
+                            " Inner({:?}): keys={:?} pointers={:?} |",
+                            page_id,
                             inner_page.keys(),
                             inner_page.pointers()
                         );
@@ -386,7 +393,7 @@ mod tests {
                     BTreePageType::Leaf => {
                         let leaf_page = page_ref.btree_leaf_page();
                         print!(
-                            " Leaf({})=>({}): keys={:?} |",
+                            " Leaf({:?})=>({:?}): keys={:?} |",
                             page_id,
                             leaf_page.next_page_id(),
                             leaf_page.keys()
@@ -409,11 +416,11 @@ mod tests {
         let btree = create_btree();
 
         for key in 0..NR_KEYS {
-            btree.insert(key, RecordId::new(0, 0)).unwrap();
+            btree.insert(Key::new(key as u32), make_record()).unwrap();
         }
 
         for key in 0..NR_KEYS {
-            assert!(btree.search(key).is_some());
+            assert!(btree.search(Key::new(key as u32)).is_some());
         }
     }
 
@@ -422,11 +429,11 @@ mod tests {
         let btree = create_btree();
 
         for key in (0..NR_KEYS).rev() {
-            btree.insert(key, RecordId::new(0, 0)).unwrap();
+            btree.insert(Key::new(key as u32), make_record()).unwrap();
         }
 
         for key in (0..NR_KEYS).rev() {
-            assert!(btree.search(key).is_some());
+            assert!(btree.search(Key::new(key as u32)).is_some());
         }
     }
 
@@ -435,12 +442,12 @@ mod tests {
         let btree = create_btree();
 
         for key in 0..NR_KEYS {
-            let key = (if key % 2 == 0 { key } else { key * 1000 }) as Key;
-            btree.insert(key, RecordId::new(0, 0)).unwrap();
+            let key = if key % 2 == 0 { key } else { key * 1000 };
+            btree.insert(Key::new(key as u32), make_record()).unwrap();
         }
         for key in 0..NR_KEYS {
-            let key = (if key % 2 == 0 { key } else { key * 1000 }) as Key;
-            assert!(btree.search(key).is_some());
+            let key = if key % 2 == 0 { key } else { key * 1000 };
+            assert!(btree.search(Key::new(key as u32)).is_some());
         }
     }
 
@@ -448,8 +455,9 @@ mod tests {
     #[should_panic]
     fn insert_duplicate_key() {
         let btree = create_btree();
-        btree.insert(10, RecordId::new(0, 0)).unwrap();
-        btree.insert(10, RecordId::new(0, 0)).unwrap();
+        let key = Key::new(10);
+        btree.insert(key, make_record()).unwrap();
+        btree.insert(key, make_record()).unwrap();
     }
 
     #[test]
@@ -457,55 +465,57 @@ mod tests {
         let btree = create_btree();
 
         for key in 0..NR_KEYS {
-            btree.insert(key * 2, RecordId::new(0, 0)).unwrap();
+            btree
+                .insert(Key::new(key as u32 * 2), make_record())
+                .unwrap();
         }
-        assert!(btree.search(10).is_some());
-        assert!(btree.search(9).is_none());
-        assert!(btree.search(11).is_none());
+        assert!(btree.search(Key::new(10)).is_some());
+        assert!(btree.search(Key::new(9)).is_none());
+        assert!(btree.search(Key::new(11)).is_none());
     }
 
     #[test]
     fn search_empty_tree() {
         let btree = create_btree();
-        assert!(btree.search(42).is_none());
+        assert!(btree.search(Key::new(42)).is_none());
     }
 
     #[test]
     fn search_nonexistent_key() {
         let btree = create_btree();
-        btree.insert(10, RecordId::new(0, 0)).unwrap();
-        btree.insert(20, RecordId::new(0, 0)).unwrap();
+        btree.insert(Key::new(10), make_record()).unwrap();
+        btree.insert(Key::new(20), make_record()).unwrap();
 
         // Search for keys that don't exist
-        assert!(btree.search(1).is_none());
-        assert!(btree.search(15).is_none());
-        assert!(btree.search(25).is_none());
+        assert!(btree.search(Key::new(1)).is_none());
+        assert!(btree.search(Key::new(15)).is_none());
+        assert!(btree.search(Key::new(25)).is_none());
     }
 
     #[test]
     fn delete_existing_key() {
         let btree = create_btree();
-        btree.insert(10, RecordId::new(0, 0)).unwrap();
-        btree.insert(20, RecordId::new(0, 0)).unwrap();
-        btree.insert(30, RecordId::new(0, 0)).unwrap();
+        btree.insert(Key::new(10), make_record()).unwrap();
+        btree.insert(Key::new(20), make_record()).unwrap();
+        btree.insert(Key::new(30), make_record()).unwrap();
 
-        let _ = btree.delete(20);
+        let _ = btree.delete(Key::new(20));
 
-        assert!(btree.search(20).is_none());
-        assert!(btree.search(10).is_some());
-        assert!(btree.search(30).is_some());
+        assert!(btree.search(Key::new(20)).is_none());
+        assert!(btree.search(Key::new(10)).is_some());
+        assert!(btree.search(Key::new(30)).is_some());
     }
 
     #[test]
     fn delete_nonexistent_key() {
         let btree = create_btree();
-        btree.insert(10, RecordId::new(0, 0)).unwrap();
+        btree.insert(Key::new(10), make_record()).unwrap();
 
         assert!(matches!(
-            btree.delete(20),
+            btree.delete(Key::new(20)),
             Err(BTreeError::Page(BTreePageError::KeyNotFound))
         ));
-        assert!(btree.search(10).is_some());
+        assert!(btree.search(Key::new(10)).is_some());
     }
 
     #[test]
@@ -513,7 +523,7 @@ mod tests {
         let btree = create_btree();
 
         assert!(matches!(
-            btree.delete(20),
+            btree.delete(Key::new(20)),
             Err(BTreeError::Page(BTreePageError::KeyNotFound))
         ));
     }
@@ -523,15 +533,15 @@ mod tests {
         let btree = create_btree();
 
         for key in 0..1000 {
-            btree.insert(key, RecordId::new(0, 0)).unwrap();
+            btree.insert(Key::new(key as u32), make_record()).unwrap();
         }
 
         for key in 0..1000 {
-            let _ = btree.delete(key);
+            let _ = btree.delete(Key::new(key));
         }
 
         for key in 0..1000 {
-            assert!(btree.search(key).is_none());
+            assert!(btree.search(Key::new(key)).is_none());
         }
     }
 
@@ -540,13 +550,13 @@ mod tests {
         let btree = create_btree();
 
         for key in 0..1000 {
-            btree.insert(key, RecordId::new(0, 0)).unwrap();
+            btree.insert(Key::new(key), make_record()).unwrap();
         }
-        assert!(btree.search(0).is_some());
-        assert!(btree.search(999).is_some());
-        assert_eq!(btree.iter(0).unwrap().count(), 1000);
-        let keys = btree.iter(0).unwrap().map(|(key, _)| key);
-        assert!(keys.eq(0..1000));
+        assert!(btree.search(Key::new(0)).is_some());
+        assert!(btree.search(Key::new(999)).is_some());
+        assert_eq!(btree.iter(Key::new(0)).unwrap().count(), 1000);
+        let keys = btree.iter(Key::new(0)).unwrap().map(|(key, _)| key);
+        assert!(keys.eq((0..1000).map(|k| Key::new(k))));
     }
 
     #[test]
@@ -561,7 +571,7 @@ mod tests {
             let handle = std::thread::spawn(move || {
                 for key in 0..KEYS_PER_THREAD {
                     let key = i * KEYS_PER_THREAD + key;
-                    btree.insert(key as Key, RecordId::new(0, 0)).unwrap();
+                    btree.insert(Key::new(key as u32), make_record()).unwrap();
                 }
             });
             handles.push(handle);
@@ -572,7 +582,7 @@ mod tests {
         }
 
         for key in 0..NUM_THREADS * KEYS_PER_THREAD {
-            assert!(btree.search(key as Key).is_some());
+            assert!(btree.search(Key::new(key as u32)).is_some());
         }
     }
 
@@ -595,20 +605,20 @@ mod tests {
                 0..NUM_RANGES => {
                     let range = ranges[i % NUM_RANGES].clone();
                     for key in range {
-                        btree.insert(key as Key, RecordId::new(0, 0)).unwrap();
+                        btree.insert(Key::new(key as u32), make_record()).unwrap();
                     }
                 }
                 NUM_RANGES.. if i % 2 == 0 => {
                     let range = ranges[i % NUM_RANGES].clone();
                     for key in range {
-                        let _ = btree.search(key as Key);
+                        let _ = btree.search(Key::new(key as u32));
                     }
                 }
                 NUM_RANGES.. => {
                     if i % 2 == 1 {
                         let range = ranges[i % NUM_RANGES].clone();
                         for key in range {
-                            let _ = btree.delete(key as Key);
+                            let _ = btree.delete(Key::new(key as u32));
                         }
                     }
                 }

@@ -64,7 +64,7 @@ impl Storage {
     ///
     /// Returns an empty `Result` if successful, or a `StorageError` on failure.
     pub fn read_page(&mut self, page_id: PageId, page: &mut Page) -> Result<(), StorageError> {
-        let offset = page_id as u64 * PAGE_SIZE as u64;
+        let offset = page_id.get() as u64 * PAGE_SIZE as u64;
 
         self.file
             .read_exact_at(page.data.as_mut_slice(), offset)
@@ -77,7 +77,7 @@ impl Storage {
     ///
     /// Returns an empty `Result` if successful, or a `StorageError` on failure.
     pub fn write_page(&mut self, page: &Page, page_id: PageId) -> Result<(), StorageError> {
-        let offset = page_id as u64 * PAGE_SIZE as u64;
+        let offset = page_id.get() as u64 * PAGE_SIZE as u64;
 
         self.file
             .write_all_at(page.data.as_slice(), offset)
@@ -106,7 +106,7 @@ impl Storage {
     pub fn allocate_page(&mut self) -> PageId {
         let offset = self.file.metadata().unwrap().len();
         self.file.write_all_at(&[0; PAGE_SIZE], offset).unwrap();
-        (offset / PAGE_SIZE as u64) as PageId
+        PageId::new((offset / PAGE_SIZE as u64) as u32)
     }
 
     /// Retreives the last allocated page id.
@@ -114,7 +114,7 @@ impl Storage {
     /// TODO: implement a free space map for more efficent storage.
     pub fn last_page_id(&self) -> PageId {
         let offset = self.file.metadata().unwrap().len();
-        (offset / PAGE_SIZE as u64) as PageId - 1
+        PageId::new(((offset / PAGE_SIZE as u64) - 1) as u32)
     }
 }
 

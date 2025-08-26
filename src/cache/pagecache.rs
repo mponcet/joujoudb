@@ -132,10 +132,10 @@ mod tests {
         }
 
         let page0 = page_cache.get_page(PAGE_RESERVED).unwrap();
-        let page1 = page_cache.get_page(1).unwrap();
+        let page1 = page_cache.get_page(PageId::new(1)).unwrap();
 
         // Page 2 should be evicted since it's the oldest non used page.
-        assert_eq!(page_cache.mem_cache.evict(), Some(2));
+        assert_eq!(page_cache.mem_cache.evict(), Some(PageId::new(2)));
         drop(page0);
         drop(page1);
     }

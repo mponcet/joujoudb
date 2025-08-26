@@ -39,7 +39,7 @@ fn btree_contention_benchmark(c: &mut Criterion) {
 
 extern crate joujoudb;
 use joujoudb::indexes::BTree;
-use joujoudb::pages::{Key, RecordId};
+use joujoudb::pages::{HeapPageSlotId, Key, PageId, RecordId};
 use joujoudb::storage::Storage;
 
 use std::sync::Arc;
@@ -49,7 +49,7 @@ use tempfile::NamedTempFile;
 
 fn btree_mixed_benchmark_call<const FAST_PATH: bool>(num_read_threads: usize) {
     let storage_path = NamedTempFile::new().unwrap();
-    let storage = Storage::open(storage_path).unwrap();
+    let storage = Storage::create(storage_path).unwrap();
 
     let btree = Arc::new(BTree::try_new(storage).unwrap());
     let mut threads = Vec::new();
@@ -62,7 +62,7 @@ fn btree_mixed_benchmark_call<const FAST_PATH: bool>(num_read_threads: usize) {
 
         let handle = thread::spawn(move || {
             for key in start_key..end_key {
-                let _ = btree_clone.search(key as Key);
+                let _ = btree_clone.search(Key::new(key));
             }
         });
 
@@ -73,16 +73,18 @@ fn btree_mixed_benchmark_call<const FAST_PATH: bool>(num_read_threads: usize) {
         // HACK: stop when reader threads stop
         while Arc::strong_count(&btree_clone) > 2 {
             for key in start_key..end_key {
-                let record_id = RecordId::new(0, 0);
+                let record_id = RecordId::new(PageId::new(0), HeapPageSlotId::new(0));
 
                 if FAST_PATH {
-                    btree_clone.insert(key as Key, record_id).unwrap();
+                    btree_clone.insert(Key::new(key), record_id).unwrap();
                 } else {
-                    btree_clone.insert_slow_path(key as Key, record_id).unwrap();
+                    btree_clone
+                        .insert_slow_path(Key::new(key), record_id)
+                        .unwrap();
                 }
             }
             for key in start_key..end_key {
-                btree_clone.delete(key as Key).unwrap();
+                btree_clone.delete(Key::new(key)).unwrap();
             }
         }
     });
@@ -95,7 +97,7 @@ fn btree_mixed_benchmark_call<const FAST_PATH: bool>(num_read_threads: usize) {
 
 fn btree_write_benchmark_call<const FAST_PATH: bool>(num_threads: usize) {
     let storage_path = NamedTempFile::new().unwrap();
-    let storage = Storage::open(storage_path).unwrap();
+    let storage = Storage::create(storage_path).unwrap();
 
     let btree = Arc::new(BTree::try_new(storage).unwrap());
 
@@ -111,11 +113,13 @@ fn btree_write_benchmark_call<const FAST_PATH: bool>(num_threads: usize) {
 
         let handle = thread::spawn(move || {
             for key in start_key..end_key {
-                let record_id = RecordId::new(0, 0);
+                let record_id = RecordId::new(PageId::new(0), HeapPageSlotId::new(0));
                 if FAST_PATH {
-                    btree_clone.insert(key as Key, record_id).unwrap();
+                    btree_clone.insert(Key::new(key as u32), record_id).unwrap();
                 } else {
-                    btree_clone.insert_slow_path(key as Key, record_id).unwrap();
+                    btree_clone
+                        .insert_slow_path(Key::new(key as u32), record_id)
+                        .unwrap();
                 }
             }
         });

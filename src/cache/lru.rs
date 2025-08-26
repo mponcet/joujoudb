@@ -57,14 +57,14 @@ mod tests {
     #[test]
     fn lru_eviction_policy() {
         let mut lru = LRU::new();
-        lru.record_access(0);
-        lru.set_evictable(0);
-        lru.record_access(1);
-        lru.set_evictable(1);
-        lru.record_access(2);
-        lru.set_evictable(2);
-        assert_eq!(lru.evict(), Some(0));
-        lru.set_unevictable(1);
-        assert_eq!(lru.evict(), Some(2));
+        lru.record_access(PageId::new(0));
+        lru.set_evictable(PageId::new(0));
+        lru.record_access(PageId::new(1));
+        lru.set_evictable(PageId::new(1));
+        lru.record_access(PageId::new(2));
+        lru.set_evictable(PageId::new(2));
+        assert_eq!(lru.evict(), Some(PageId::new(0)));
+        lru.set_unevictable(PageId::new(1));
+        assert_eq!(lru.evict(), Some(PageId::new(2)));
     }
 }
