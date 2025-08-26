@@ -13,7 +13,7 @@ pub enum ColumnType {
 pub struct Constraints(u8);
 
 impl Constraints {
-    fn new(nullable: bool, unique: bool) -> Self {
+    pub fn new(nullable: bool, unique: bool) -> Self {
         let mut constraints = Self::default();
 
         if nullable {
@@ -35,11 +35,11 @@ impl Constraints {
         self.0 |= 0b10
     }
 
-    fn is_nullable(&self) -> bool {
+    pub fn is_nullable(&self) -> bool {
         self.0 & 0b1 == 0b1
     }
 
-    fn is_unique(&self) -> bool {
+    pub fn is_unique(&self) -> bool {
         self.0 & 0b10 == 0b10
     }
 }
