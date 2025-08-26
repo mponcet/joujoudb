@@ -3,7 +3,7 @@ use crate::serialize::Serialize;
 use crate::tuple::{Tuple, TupleRef};
 
 use thiserror::Error;
-use zerocopy::*;
+use zerocopy::{little_endian::U16, *};
 use zerocopy_derive::*;
 
 /// The identifier for a slot in a heap page.
@@ -68,18 +68,29 @@ pub struct HeapPage {
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 struct HeapPageSlot {
-    offset: u16,
-    len: u16,
+    offset: U16,
+    len: U16,
 }
 
 impl HeapPageSlot {
-    fn new(offset: u16, len: u16) -> Self {
-        assert!(len > 0);
-        Self { offset, len }
+    fn new(offset: usize, len: usize) -> Self {
+        assert!(len > 0 && len as u16 <= u16::MAX);
+        Self {
+            offset: U16::new(offset as u16),
+            len: U16::new(len as u16),
+        }
+    }
+
+    fn offset(&self) -> usize {
+        self.offset.get() as usize
+    }
+
+    fn len(&self) -> usize {
+        self.len.get() as usize
     }
 
     fn mark_deleted(&mut self) {
-        self.len = 0;
+        self.len.set(0)
     }
 
     pub fn is_deleted(&self) -> bool {
@@ -129,9 +140,15 @@ impl HeapPage {
     }
 
     #[inline]
+    fn last_slot_offset(&self) -> Option<usize> {
+        self.last_slot_id()
+            .map(|slot_id| slot_id as usize * Self::SLOT_SIZE)
+    }
+
+    #[inline]
     fn last_tuple_offset(&self) -> Option<usize> {
         self.last_slot_id()
-            .map(|slot_id| self.get_slot(slot_id).unwrap().offset as usize)
+            .map(|slot_id| self.get_slot(slot_id).unwrap().offset())
     }
 
     fn get_slot(&self, slot_id: HeapPageSlotId) -> Option<&HeapPageSlot> {
@@ -154,12 +171,16 @@ impl HeapPage {
         HeapPageSlot::mut_from_bytes(bytes).ok()
     }
 
-    // free space for both the slot and the tuple
-    fn has_free_space(&self, tuple: &Tuple) -> bool {
-        let free_space = self.last_tuple_offset().unwrap_or(Self::DATA_SIZE)
-            - self.header.num_slots as usize * Self::SLOT_SIZE;
+    #[inline]
+    fn free_space(&self) -> usize {
+        self.last_tuple_offset().unwrap_or(Self::DATA_SIZE)
+            - self.header.num_slots as usize * Self::SLOT_SIZE
+    }
 
-        free_space >= (Self::SLOT_SIZE + tuple.len())
+    // free space for both the slot and the tuple
+    #[inline]
+    fn has_free_space(&self, tuple: &Tuple) -> bool {
+        self.free_space() >= (Self::SLOT_SIZE + tuple.len())
     }
 
     /// Inserts a tuple into the heap page.
@@ -168,18 +189,16 @@ impl HeapPage {
     pub fn insert_tuple(&mut self, tuple: &Tuple) -> Result<HeapPageSlotId, HeapPageError> {
         if self.has_free_space(tuple) {
             // insert tuple
-
             let tuple_len = tuple.len();
-            let offset = self
-                .last_tuple_offset()
-                .unwrap_or(Self::DATA_SIZE - tuple_len);
+            let offset = self.last_tuple_offset().unwrap_or(Self::DATA_SIZE) - tuple_len;
             tuple.write_bytes_to(&mut self.data[offset..]);
 
             // insert slot
-            let slot = HeapPageSlot::new(offset as u16, tuple_len as u16);
-            let idx = self.header.num_slots as usize * Self::SLOT_SIZE;
-            self.data[idx..idx + Self::SLOT_SIZE].copy_from_slice(slot.as_bytes());
             self.header.num_slots += 1;
+            let slot = HeapPageSlot::new(offset, tuple_len);
+            let idx = self.last_slot_offset().unwrap();
+            slot.write_to(&mut self.data[idx..idx + Self::SLOT_SIZE])
+                .unwrap();
 
             Ok(self.header.num_slots - 1)
         } else {
@@ -204,7 +223,7 @@ impl HeapPage {
     /// Returns a `Result` containing a `Tuple` reference, or a `HeapPageError` if the slot is not found or has been deleted.
     pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<&TupleRef, HeapPageError> {
         let slot = self.get_slot(slot_id).ok_or(HeapPageError::SlotNotFound)?;
-        let (idx, len) = (slot.offset as usize, slot.len as usize);
+        let (idx, len) = (slot.offset(), slot.len());
 
         if slot.is_deleted() {
             Err(HeapPageError::SlotDeleted)
@@ -228,45 +247,86 @@ impl<'a> From<&'a mut Page> for &'a mut HeapPage {
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
+    use crate::sql::schema::{Column, ColumnType, Constraints, Schema};
+    use crate::sql::types::{BigInt, Char, Value, VarChar};
 
-    // #[test]
-    // fn test() {
-    //     let cache = crate::cache::MemCache::new();
-    //     let _ = cache.new_page(0);
-    //     let page = cache.get_page_mut(0).unwrap();
-    //     let mut heappage: HeapPageRefMut = page.into(); // = page_ref_mut.into();
-    //     let tuple_w = crate::tuple::Tuple::try_new(vec![1, 2, 3].into_boxed_slice()).unwrap();
-    //     let slot_id = heappage.insert_tuple(&tuple_w).unwrap();
-    //     let tuple_r = heappage.get_tuple(slot_id).unwrap();
-    //     assert_eq!(tuple_w.values(), tuple_r.values());
-    // }
+    use super::*;
 
-    // #[test]
-    // fn page_should_not_overflow() {
-    //     let mut page = HeapPage::new();
-    //     let data = vec![0, 1, 2, 3, 4, 5, 6, 7].into_boxed_slice();
-    //     let tuple = Tuple::try_new(data).unwrap();
-    //
-    //     for _ in 0..PAGE_SIZE {
-    //         let _ = page.insert_tuple(&tuple);
-    //     }
-    //
-    //     let result = page.insert_tuple(&tuple);
-    //     assert_eq!(result.err().unwrap(), HeapPageError::NoFreeSpace)
-    // }
-    //
-    // #[test]
-    // fn test_get_after_insert_delete() {
-    //     let mut page = HeapPage::new();
-    //     let data = vec![0, 1, 2, 3, 4, 5, 6, 7].into_boxed_slice();
-    //     let tuple = Tuple::try_new(data).unwrap();
-    //
-    //     let slot_id = page.insert_tuple(&tuple).expect("cannot insert tuple");
-    //     let tuple_ref = page.get_tuple(slot_id).expect("cannot get tuple");
-    //     assert_eq!(tuple.values(), tuple_ref.values());
-    //     page.delete_tuple(slot_id).expect("cannot delete tuple");
-    //     let tuple_ref = page.get_tuple(slot_id);
-    //     assert_eq!(tuple_ref.err().unwrap(), HeapPageError::SlotDeleted);
-    // }
+    fn test_schema() -> Schema {
+        Schema::new(vec![
+            Column::new(ColumnType::BigInt, Constraints::default()),
+            Column::new(ColumnType::VarChar, Constraints::default()),
+            Column::new(ColumnType::Char(32), Constraints::default()),
+        ])
+    }
+
+    fn test_values(varchar_len: usize, char_len: usize) -> Vec<Value> {
+        let varchar = String::from_iter(std::iter::repeat_n('v', varchar_len));
+        let char = String::from_iter(std::iter::repeat_n('c', char_len));
+        vec![
+            Value::BigInt(BigInt::new(42)),
+            Value::VarChar(VarChar::new(varchar)),
+            Value::Char(Char::new(char, Some(32))),
+        ]
+    }
+
+    #[test]
+    fn page_should_not_overflow() {
+        let mut page = HeapPage::new();
+        let values = test_values(128, 32);
+        let tuple = Tuple::try_new(values).unwrap();
+
+        for _ in 0..40 {
+            let _ = page.insert_tuple(&tuple);
+        }
+
+        let result = page.insert_tuple(&tuple);
+        assert_eq!(result.err().unwrap(), HeapPageError::NoFreeSpace)
+    }
+
+    #[test]
+    fn fill_page() {
+        let mut page = HeapPage::new();
+
+        assert_eq!(page.free_space(), HeapPage::DATA_SIZE);
+        let values = vec![Value::Char(Char::new("cc".to_string(), Some(2)))];
+        let tuple = Tuple::try_new(values).unwrap();
+        // slot and tuple (with header) size: 8
+        for _ in 0..HeapPage::DATA_SIZE / 8 {
+            let _ = page.insert_tuple(&tuple);
+        }
+
+        assert_eq!(page.free_space(), HeapPage::DATA_SIZE % 8);
+    }
+
+    #[test]
+    fn get_after_insert_delete() {
+        let mut page = HeapPage::new();
+
+        let schema = test_schema();
+        let values = test_values(128, 32);
+        let values2 = test_values(64, 16);
+        let values_clone = values.clone();
+        let values2_clone = values2.clone();
+        let tuple = Tuple::try_new(values).unwrap();
+        let tuple2 = Tuple::try_new(values2).unwrap();
+
+        let slot_id = page.insert_tuple(&tuple).unwrap();
+        let slot_id2 = page.insert_tuple(&tuple2).unwrap();
+        let tuple = page.get_tuple(slot_id).unwrap().to_owned(&schema);
+        for (lhs, rhs) in tuple.values().iter().zip(values_clone.iter()) {
+            assert_eq!(lhs, rhs);
+        }
+        let tuple2 = page.get_tuple(slot_id2).unwrap().to_owned(&schema);
+        for (lhs, rhs) in tuple2.values().iter().zip(values2_clone.iter()) {
+            assert_eq!(lhs, rhs);
+        }
+
+        page.delete_tuple(slot_id).unwrap();
+        let tuple_ref = page.get_tuple(slot_id);
+        assert_eq!(tuple_ref.err().unwrap(), HeapPageError::SlotDeleted);
+
+        let tuple2 = page.get_tuple(slot_id2).unwrap().to_owned(&schema);
+        assert_eq!(tuple2.values(), values2_clone);
+    }
 }
