@@ -137,6 +137,7 @@ pub enum Value {
     BigInt(BigInt),
     Char(Char),
     VarChar(VarChar),
+    Null,
 }
 
 impl Value {
@@ -148,11 +149,12 @@ impl Value {
         }
     }
 
-    pub fn header_len(&self) -> Option<usize> {
+    pub fn header_len(&self) -> usize {
         match self {
-            Value::BigInt(_) => None,
-            Value::Char(_) => None,
-            Value::VarChar(_) => Some(std::mem::size_of::<ValueHeader>()),
+            Value::BigInt(_) => 0,
+            Value::Char(_) => 0,
+            Value::VarChar(_) => VALUE_HEADER_SIZE,
+            Value::Null => 0,
         }
     }
 
@@ -162,7 +164,12 @@ impl Value {
             Value::BigInt(_) => std::mem::size_of::<BigInt>(),
             Value::Char(char) => char.0.len(),
             Value::VarChar(varchar) => varchar.0.len(),
+            Value::Null => 0,
         }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, Value::Null)
     }
 }
 
@@ -172,6 +179,7 @@ impl Serialize for Value {
             Value::BigInt(bigint) => bigint.write_bytes_to(dst),
             Value::Char(char) => char.write_bytes_to(dst),
             Value::VarChar(varchar) => varchar.write_bytes_to(dst),
+            Value::Null => unreachable!(),
         }
     }
 }
@@ -182,6 +190,7 @@ impl PartialEq for Value {
             (Self::BigInt(lhs), Self::BigInt(rhs)) => lhs.get() == rhs.get(),
             (Self::Char(lhs), Self::Char(rhs)) => lhs.get() == rhs.get(),
             (Self::VarChar(lhs), Self::VarChar(rhs)) => lhs.get() == rhs.get(),
+            (Self::Null, Self::Null) => true,
             _ => false,
         }
     }
