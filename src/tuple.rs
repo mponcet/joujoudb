@@ -79,9 +79,13 @@ impl TupleRef {
 pub enum TupleError {
     #[error("tuple size cannot exceed {}", HeapPage::MAX_TUPLE_SIZE)]
     Size,
+    #[error("tuple cannot have more than {} columns", Tuple::MAX_COLUMNS)]
+    TooManyColumns,
 }
 
 impl Tuple {
+    pub const MAX_COLUMNS: usize = 64;
+
     /// The size of the tuple header in bytes.
     const HEADER_SIZE: usize = std::mem::size_of::<TupleHeader>();
 
@@ -89,6 +93,10 @@ impl Tuple {
     ///
     /// Returns a `Result` containing the new `Tuple`, or a `TupleError` if the tuple size exceeds the maximum allowed.
     pub fn try_new(values: Vec<Value>) -> Result<Self, TupleError> {
+        if values.len() > Self::MAX_COLUMNS {
+            return Err(TupleError::TooManyColumns);
+        }
+
         let values_len = values
             .iter()
             .map(|v| v.header_len() + v.data_len())
