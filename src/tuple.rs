@@ -60,7 +60,7 @@ pub enum TupleError {
 
 impl Tuple {
     /// The size of the tuple header in bytes.
-    pub const HEADER_SIZE: usize = std::mem::size_of::<TupleHeader>();
+    const HEADER_SIZE: usize = std::mem::size_of::<TupleHeader>();
 
     /// Creates a new tuple with the given values.
     ///
@@ -97,6 +97,11 @@ impl Tuple {
         self.write_bytes_to(v.as_mut_slice());
 
         Box::leak(v.into_boxed_slice())
+    }
+
+    #[cfg(test)]
+    pub fn values(&self) -> &[Value] {
+        self.values.as_slice()
     }
 }
 
