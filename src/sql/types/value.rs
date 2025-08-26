@@ -13,9 +13,9 @@ pub struct ValueHeader {
     pub len: U16,
 }
 
-const VALUE_HEADER_SIZE: usize = std::mem::size_of::<ValueHeader>();
-
 impl ValueHeader {
+    const SIZE: usize = std::mem::size_of::<ValueHeader>();
+
     pub fn new(len: usize) -> Self {
         assert!(len <= u16::MAX as usize);
         Self {
@@ -76,7 +76,7 @@ impl Char {
 impl Serialize for Char {
     fn write_bytes_to(&self, dst: &mut [u8]) {
         let src = self.0.as_bytes();
-        dst[..src.len()].copy_from_slice(src);
+        src.write_to(&mut dst[..src.len()]).unwrap()
     }
 }
 
@@ -103,10 +103,10 @@ impl VarChar {
 impl Serialize for VarChar {
     fn write_bytes_to(&self, dst: &mut [u8]) {
         let header = ValueHeader::new(self.0.len());
-        let header = header.as_bytes();
-        header.write_to(&mut dst[..VALUE_HEADER_SIZE]).unwrap();
+        let offset = ValueHeader::SIZE;
+        header.write_to(&mut dst[..offset]).unwrap();
         let src = self.0.as_bytes();
-        dst[VALUE_HEADER_SIZE..VALUE_HEADER_SIZE + src.len()].copy_from_slice(src);
+        src.write_to(&mut dst[offset..offset + src.len()]).unwrap();
     }
 }
 
@@ -153,7 +153,7 @@ impl Value {
         match self {
             Value::BigInt(_) => 0,
             Value::Char(_) => 0,
-            Value::VarChar(_) => VALUE_HEADER_SIZE,
+            Value::VarChar(_) => ValueHeader::SIZE,
             Value::Null => 0,
         }
     }
