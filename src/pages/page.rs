@@ -1,11 +1,29 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-pub const PAGE_SIZE: usize = 4096;
-pub const PAGE_INVALID: PageId = 0;
-/// The page id reserved for the superblock
-pub const PAGE_RESERVED: PageId = 0;
+use zerocopy::little_endian::U32;
+use zerocopy_derive::*;
 
-pub type PageId = u32;
+pub const PAGE_SIZE: usize = 4096;
+pub const PAGE_INVALID: PageId = PageId(U32::new(0));
+/// The page id reserved for the superblock
+pub const PAGE_RESERVED: PageId = PageId(U32::new(0));
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, FromBytes, IntoBytes, KnownLayout, Immutable)]
+pub struct PageId(U32);
+
+impl PageId {
+    pub fn new(page_id: u32) -> Self {
+        Self(U32::new(page_id))
+    }
+
+    pub fn get(&self) -> u32 {
+        self.0.get()
+    }
+
+    pub fn set(&mut self, page_id: u32) {
+        self.0.set(page_id);
+    }
+}
 
 /// the actual data read from/written to disk
 pub struct Page {

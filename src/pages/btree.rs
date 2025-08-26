@@ -1,7 +1,10 @@
-use crate::pages::{HeapPageSlotId, PAGE_INVALID, PAGE_SIZE, Page, PageId, RecordId};
+use crate::pages::{PAGE_INVALID, PAGE_SIZE, Page, PageId, RecordId};
 
 use thiserror::Error;
-use zerocopy::FromBytes;
+use zerocopy::{
+    little_endian::{U16, U32},
+    *,
+};
 use zerocopy_derive::*;
 
 const BTREE_BRANCHING_FACTOR: usize = 341;
@@ -28,7 +31,7 @@ struct BTreePageHeader {
     // should be a BTreePageType but zerocopy
     // FromBytes trait doesn't support enum
     page_type: u8,
-    num_keys: u16,
+    num_keys: U16,
 }
 
 pub fn btree_get_page_type(page: &Page) -> BTreePageType {
@@ -41,7 +44,24 @@ pub fn btree_get_page_type(page: &Page) -> BTreePageType {
     }
 }
 
-pub type Key = u32;
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, FromBytes, IntoBytes, KnownLayout, Immutable,
+)]
+pub struct Key(U32);
+
+impl Key {
+    pub fn new(key: u32) -> Self {
+        Self(U32::new(key))
+    }
+
+    pub fn get(&self) -> u32 {
+        self.0.get()
+    }
+
+    pub fn set(&mut self, key: u32) {
+        self.0.set(key)
+    }
+}
 
 #[derive(FromBytes, KnownLayout, Immutable)]
 #[repr(C)]
@@ -85,15 +105,15 @@ pub struct SplitInner<'page> {
 
 impl SplitInner<'_> {
     pub fn split(&mut self, rhs: &mut BTreeInnerPage, key: Key, right_pointer: PageId) -> Key {
-        let lhs_num_keys = self.lhs.header.num_keys as usize;
+        let lhs_num_keys = self.lhs.header.num_keys.get() as usize;
         let split_at = lhs_num_keys.div_ceil(2) - 1;
         let rhs_num_keys = lhs_num_keys - split_at;
         // FIXME: optimize: insert key before copying
         rhs.keys[..rhs_num_keys - 1].copy_from_slice(&self.lhs.keys[split_at + 1..]);
         rhs.pointers[..rhs_num_keys].copy_from_slice(&self.lhs.pointers[split_at + 1..]);
 
-        self.lhs.header.num_keys = split_at as u16;
-        rhs.header.num_keys = (rhs_num_keys - 1) as u16;
+        self.lhs.header.num_keys.set(split_at as u16);
+        rhs.header.num_keys.set((rhs_num_keys - 1) as u16);
 
         let split_key = self.lhs.keys[split_at];
         if key > split_key {
@@ -111,13 +131,13 @@ impl SplitInner<'_> {
 impl BTreeInnerPage {
     #[inline]
     pub fn keys(&self) -> &[Key] {
-        let num_keys = self.header.num_keys as usize;
+        let num_keys = self.header.num_keys.get() as usize;
         &self.keys[..num_keys]
     }
 
     #[inline]
-    pub fn pointers(&self) -> &[Key] {
-        let num_keys = self.header.num_keys as usize;
+    pub fn pointers(&self) -> &[PageId] {
+        let num_keys = self.header.num_keys.get() as usize;
         &self.pointers[..num_keys + 1]
     }
 
@@ -131,7 +151,7 @@ impl BTreeInnerPage {
     pub fn init(&mut self, key: Key, left_pointer: PageId, right_pointer: PageId) {
         self.header = BTreePageHeader {
             page_type: 0,
-            num_keys: 1,
+            num_keys: U16::new(1),
         };
 
         self.keys[0] = key;
@@ -142,7 +162,7 @@ impl BTreeInnerPage {
     pub fn init_header(&mut self) {
         self.header = BTreePageHeader {
             page_type: 0,
-            num_keys: 0,
+            num_keys: U16::new(0),
         };
     }
 
@@ -152,7 +172,7 @@ impl BTreeInnerPage {
                 unimplemented!("duplicate keys");
             }
             Err(pos) => {
-                let num_keys = self.header.num_keys as usize;
+                let num_keys = self.header.num_keys.get() as usize;
                 if num_keys < BTREE_NUM_KEYS {
                     self.keys.copy_within(pos..num_keys, pos + 1);
                     self.keys[pos] = key;
@@ -173,7 +193,7 @@ impl BTreeInnerPage {
             .binary_search(&key)
             .map_err(|_| BTreePageError::KeyNotFound)?;
 
-        let num_keys = self.header.num_keys as usize;
+        let num_keys = self.header.num_keys.get() as usize;
         self.keys.copy_within(pos + 1..num_keys - 1, pos);
         self.pointers.copy_within(pos..num_keys, pos + 1);
         self.header.num_keys -= 1;
@@ -217,7 +237,7 @@ pub struct SplitLeaf<'page> {
 
 impl SplitLeaf<'_> {
     pub fn split(&mut self, rhs: &mut BTreeLeafPage, key: Key, value: RecordId) -> Key {
-        let lhs_num_keys = self.lhs.header.num_keys as usize;
+        let lhs_num_keys = self.lhs.header.num_keys.get() as usize;
         let split_at = lhs_num_keys.div_ceil(2);
         let rhs_num_keys = lhs_num_keys - split_at;
         let median_key = self.lhs.keys[split_at];
@@ -225,8 +245,8 @@ impl SplitLeaf<'_> {
         rhs.keys[..rhs_num_keys].copy_from_slice(&self.lhs.keys[split_at..]);
         rhs.values[..rhs_num_keys].copy_from_slice(&self.lhs.values[split_at..]);
 
-        self.lhs.header.num_keys = split_at as u16;
-        rhs.header.num_keys = rhs_num_keys as u16;
+        self.lhs.header.num_keys.set(split_at as u16);
+        rhs.header.num_keys.set(rhs_num_keys as u16);
 
         if key < median_key {
             self.lhs.insert(key, value);
@@ -244,12 +264,12 @@ impl BTreeLeafPage {
     #[inline]
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
-        self.header.num_keys as usize
+        self.header.num_keys.get() as usize
     }
 
     #[inline]
     pub fn keys(&self) -> &[Key] {
-        let num_keys = self.header.num_keys as usize;
+        let num_keys = self.header.num_keys.get() as usize;
         &self.keys[..num_keys]
     }
 
@@ -281,7 +301,7 @@ impl BTreeLeafPage {
     pub fn init(&mut self) {
         self.header = BTreePageHeader {
             page_type: 1,
-            num_keys: 0,
+            num_keys: U16::new(0),
         };
         self.next = PAGE_INVALID;
     }
@@ -292,7 +312,7 @@ impl BTreeLeafPage {
                 unimplemented!("duplicate keys");
             }
             Err(pos) => {
-                let num_keys = self.header.num_keys as usize;
+                let num_keys = self.header.num_keys.get() as usize;
                 if num_keys < BTREE_NUM_KEYS {
                     self.keys.copy_within(pos..num_keys, pos + 1);
                     self.keys[pos] = key;
@@ -308,7 +328,7 @@ impl BTreeLeafPage {
     }
 
     pub fn delete(&mut self, key: Key) -> Result<(), BTreePageError> {
-        let num_keys = self.header.num_keys as usize;
+        let num_keys = self.header.num_keys.get() as usize;
         let pos = self
             .keys()
             .binary_search(&key)
@@ -338,10 +358,14 @@ impl From<&mut Page> for &mut BTreeLeafPage {
 mod tests {
     use super::*;
 
-    fn make_record(key: Key) -> RecordId {
+    use crate::pages::HeapPageSlotId;
+
+    use zerocopy::little_endian::U16;
+
+    fn make_record() -> RecordId {
         RecordId {
-            page_id: key as PageId,
-            slot_id: key as HeapPageSlotId,
+            page_id: PageId::new(0),
+            slot_id: HeapPageSlotId::new(0),
         }
     }
 
@@ -351,11 +375,11 @@ mod tests {
             Self {
                 header: BTreePageHeader {
                     page_type: BTreePageType::Leaf as u8,
-                    num_keys: 0,
+                    num_keys: U16::new(0),
                 },
-                keys: [Key::default(); BTREE_NUM_KEYS],
-                values: [make_record(0); BTREE_NUM_KEYS],
-                next: Default::default(),
+                keys: [Key::new(0); BTREE_NUM_KEYS],
+                values: [make_record(); BTREE_NUM_KEYS],
+                next: PageId::new(0),
             }
         }
     }
@@ -364,12 +388,12 @@ mod tests {
     fn test_leaf_page_basic() {
         let mut leaf = BTreeLeafPage::default();
         for key in 0..BTREE_NUM_KEYS {
-            let _ = leaf.insert(key as Key, make_record(key as Key));
+            let _ = leaf.insert(Key::new(key as u32), make_record());
         }
         assert_eq!(leaf.keys().len(), BTREE_NUM_KEYS);
         assert!(leaf.keys().is_sorted());
 
-        let key = (BTREE_NUM_KEYS / 2) as Key;
+        let key = Key::new((BTREE_NUM_KEYS / 2) as u32);
         assert!(leaf.get(key).is_some());
         let _ = leaf.delete(key);
         assert!(leaf.get(key).is_none());
@@ -380,8 +404,8 @@ mod tests {
     fn test_insert_leaf_page_not_monotonic() {
         let mut leaf = BTreeLeafPage::default();
         for key in 0..BTREE_NUM_KEYS {
-            let key = (if key % 2 == 0 { key } else { key * 1000 }) as Key;
-            let _ = leaf.insert(key as Key, make_record(key as Key));
+            let key = if key % 2 == 0 { key } else { key * 1000 };
+            let _ = leaf.insert(Key::new(key as u32), make_record());
         }
 
         assert!(leaf.keys().is_sorted());
@@ -395,12 +419,12 @@ mod tests {
         // fill lhs
         for key in 0..BTREE_NUM_KEYS {
             let key = key * 2;
-            lhs.insert(key as Key, make_record(key as Key));
+            lhs.insert(Key::new(key as u32), make_record());
         }
 
         // lhs is full, split needed
         let key = BTREE_NUM_KEYS - BTREE_NUM_KEYS % 2 + 1;
-        let (key, value) = (key as Key, make_record(key as Key));
+        let (key, value) = (Key::new(key as u32), make_record());
         let split = lhs.insert(key, value);
         assert!(split.is_some());
         split.unwrap().split(&mut rhs, key, value);
@@ -415,10 +439,10 @@ mod tests {
             Self {
                 header: BTreePageHeader {
                     page_type: BTreePageType::Inner as u8,
-                    num_keys: 0,
+                    num_keys: U16::new(0),
                 },
-                keys: [Key::default(); BTREE_NUM_KEYS],
-                pointers: [PageId::default(); BTREE_BRANCHING_FACTOR],
+                keys: [Key::new(0); BTREE_NUM_KEYS],
+                pointers: [PageId::new(0); BTREE_BRANCHING_FACTOR],
             }
         }
     }
@@ -427,9 +451,9 @@ mod tests {
     fn test_inner_page_basic() {
         let mut inner = BTreeInnerPage::default();
 
-        inner.init(0, 1, 2);
+        inner.init(Key::new(0), PageId::new(1), PageId::new(2));
         for key in 1..BTREE_NUM_KEYS {
-            inner.insert(key as Key, key as PageId);
+            inner.insert(Key::new(key as u32), PageId::new(key as u32));
         }
     }
 }

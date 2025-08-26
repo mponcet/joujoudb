@@ -423,13 +423,15 @@ mod tests {
             let cache = cache.clone();
             let handle = std::thread::spawn(move || {
                 for j in 0..CONFIG.PAGE_CACHE_SIZE / 2 {
-                    let page_id = j as PageId;
+                    let page_id = PageId::new(j as u32);
                     match thread_id {
                         0 => {
                             let _ = cache.new_page_mut(page_id);
                         }
                         1 => {
-                            let _ = cache.new_page_mut(CONFIG.PAGE_CACHE_SIZE as u32 / 2 + page_id);
+                            let page_id =
+                                PageId::new(CONFIG.PAGE_CACHE_SIZE as u32 / 2 + page_id.get());
+                            let _ = cache.new_page_mut(page_id);
                         }
                         2..6 => {
                             let _ = cache.get_page_mut(page_id);
