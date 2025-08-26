@@ -313,12 +313,12 @@ mod tests {
         assert_eq!(page.free_space(), HeapPage::DATA_SIZE);
         let values = vec![Value::Char(Char::new("cc".to_string(), Some(2)))];
         let tuple = Tuple::try_new(values).unwrap();
-        // slot and tuple (with header) size: 8
-        for _ in 0..HeapPage::DATA_SIZE / 8 {
+        // slot and tuple (with header) size: 16
+        for _ in 0..HeapPage::DATA_SIZE / 16 {
             let _ = page.insert_tuple(&tuple);
         }
 
-        assert_eq!(page.free_space(), HeapPage::DATA_SIZE % 8);
+        assert_eq!(page.free_space(), HeapPage::DATA_SIZE % 16);
     }
 
     #[test]
