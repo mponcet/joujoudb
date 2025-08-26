@@ -49,6 +49,10 @@ struct HeapPageHeader {
     num_slots: HeapPageSlotId,
 }
 
+impl HeapPageHeader {
+    const SIZE: usize = std::mem::size_of::<HeapPageHeader>();
+}
+
 /// A slotted page that stores tuples.
 ///
 /// The `HeapPage` is organized as follows:
@@ -92,6 +96,8 @@ struct HeapPageSlot {
 }
 
 impl HeapPageSlot {
+    const SIZE: usize = std::mem::size_of::<HeapPageSlot>();
+
     fn new(offset: usize, len: usize) -> Self {
         assert!(len > 0 && len as u16 <= u16::MAX);
         Self {
@@ -140,12 +146,10 @@ impl Default for HeapPage {
 }
 
 impl HeapPage {
-    const HEADER_SIZE: usize = std::mem::size_of::<HeapPageHeader>();
-    const SLOT_SIZE: usize = std::mem::size_of::<HeapPageSlot>();
-    const DATA_SIZE: usize = PAGE_SIZE - Self::HEADER_SIZE;
+    const DATA_SIZE: usize = PAGE_SIZE - HeapPageHeader::SIZE;
 
     /// The maximum size of a tuple that can be stored in a heap page.
-    pub const MAX_TUPLE_SIZE: usize = Self::DATA_SIZE - Self::SLOT_SIZE;
+    pub const MAX_TUPLE_SIZE: usize = Self::DATA_SIZE - HeapPageSlot::SIZE;
 
     #[cfg(test)]
     pub fn new() -> Self {
@@ -164,7 +168,7 @@ impl HeapPage {
     #[inline]
     fn last_slot_offset(&self) -> Option<usize> {
         self.last_slot_id()
-            .map(|slot_id| slot_id.get() as usize * Self::SLOT_SIZE)
+            .map(|slot_id| slot_id.get() as usize * HeapPageSlot::SIZE)
     }
 
     #[inline]
@@ -178,8 +182,8 @@ impl HeapPage {
             return None;
         }
 
-        let idx = slot_id.get() as usize * Self::SLOT_SIZE;
-        let bytes = &self.data[idx..idx + Self::SLOT_SIZE];
+        let idx = slot_id.get() as usize * HeapPageSlot::SIZE;
+        let bytes = &self.data[idx..idx + HeapPageSlot::SIZE];
         HeapPageSlot::ref_from_bytes(bytes).ok()
     }
 
@@ -188,21 +192,21 @@ impl HeapPage {
             return None;
         }
 
-        let idx = slot_id.get() as usize * Self::SLOT_SIZE;
-        let bytes = &mut self.data[idx..idx + Self::SLOT_SIZE];
+        let idx = slot_id.get() as usize * HeapPageSlot::SIZE;
+        let bytes = &mut self.data[idx..idx + HeapPageSlot::SIZE];
         HeapPageSlot::mut_from_bytes(bytes).ok()
     }
 
     #[inline]
     fn free_space(&self) -> usize {
         self.last_tuple_offset().unwrap_or(Self::DATA_SIZE)
-            - self.header.num_slots.get() as usize * Self::SLOT_SIZE
+            - self.header.num_slots.get() as usize * HeapPageSlot::SIZE
     }
 
     // free space for both the slot and the tuple
     #[inline]
     fn has_free_space(&self, tuple: &Tuple) -> bool {
-        self.free_space() >= (Self::SLOT_SIZE + tuple.len())
+        self.free_space() >= (HeapPageSlot::SIZE + tuple.len())
     }
 
     /// Inserts a tuple into the heap page.
@@ -219,7 +223,7 @@ impl HeapPage {
             self.header.num_slots.set(self.header.num_slots.get() + 1);
             let slot = HeapPageSlot::new(offset, tuple_len);
             let idx = self.last_slot_offset().unwrap();
-            slot.write_to(&mut self.data[idx..idx + Self::SLOT_SIZE])
+            slot.write_to(&mut self.data[idx..idx + HeapPageSlot::SIZE])
                 .unwrap();
 
             Ok(HeapPageSlotId::new(self.header.num_slots.get() - 1))
