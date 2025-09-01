@@ -1,6 +1,6 @@
 use crate::cache::memcache::MemCache;
 use crate::pages::PageId;
-use crate::storage::{Storage, StorageError};
+use crate::storage::{StorageBackend, StorageError};
 
 use super::memcache::{MemCacheError, PageRef, PageRefMut};
 use thiserror::Error;
@@ -19,14 +19,14 @@ pub enum PageCacheError {
 /// - Fetching pages from the disk and loading them into memory.
 /// - Evicting pages from memory when the cache is full.
 /// - Writing dirty pages back to the disk.
-pub struct PageCache {
-    storage: Storage,
+pub struct PageCache<S: StorageBackend> {
+    storage: S,
     mem_cache: MemCache,
 }
 
-impl PageCache {
+impl<S: StorageBackend> PageCache<S> {
     /// Creates a new `PageCache` with the given storage backend.
-    pub fn try_new(storage: Storage) -> Result<Self, PageCacheError> {
+    pub fn try_new(storage: S) -> Result<Self, PageCacheError> {
         Ok(Self {
             storage,
             mem_cache: MemCache::try_new().map_err(PageCacheError::MemCache)?,
@@ -111,13 +111,14 @@ mod tests {
 
     use crate::cache::DEFAULT_PAGE_CACHE_SIZE;
     use crate::pages::PAGE_RESERVED;
+    use crate::storage::FileStorage;
 
     use tempfile::NamedTempFile;
 
     #[test]
     fn evict_page_lru() {
         let storage_path = NamedTempFile::new().unwrap();
-        let storage = Storage::create(storage_path).unwrap();
+        let storage = FileStorage::create(storage_path).unwrap();
         let page_cache = PageCache::try_new(storage).unwrap();
 
         // Page 0 is reserved and not allocatable via new_page().

@@ -40,7 +40,7 @@ fn btree_contention_benchmark(c: &mut Criterion) {
 extern crate joujoudb;
 use joujoudb::indexes::BTree;
 use joujoudb::pages::{HeapPageSlotId, Key, PageId, RecordId};
-use joujoudb::storage::Storage;
+use joujoudb::storage::FileStorage;
 
 use std::sync::Arc;
 use std::thread;
@@ -49,7 +49,7 @@ use tempfile::NamedTempFile;
 
 fn btree_mixed_benchmark_call<const FAST_PATH: bool>(num_read_threads: usize) {
     let storage_path = NamedTempFile::new().unwrap();
-    let storage = Storage::create(storage_path).unwrap();
+    let storage = FileStorage::create(storage_path).unwrap();
 
     let btree = Arc::new(BTree::try_new(storage).unwrap());
     let mut threads = Vec::new();
@@ -97,7 +97,7 @@ fn btree_mixed_benchmark_call<const FAST_PATH: bool>(num_read_threads: usize) {
 
 fn btree_write_benchmark_call<const FAST_PATH: bool>(num_threads: usize) {
     let storage_path = NamedTempFile::new().unwrap();
-    let storage = Storage::create(storage_path).unwrap();
+    let storage = FileStorage::create(storage_path).unwrap();
 
     let btree = Arc::new(BTree::try_new(storage).unwrap());
 

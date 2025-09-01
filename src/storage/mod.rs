@@ -1,4 +1,4 @@
 mod backend;
 mod fs;
 
-pub use backend::{Storage, StorageError};
+pub use backend::{FileStorage, StorageBackend, StorageError};

@@ -13,16 +13,24 @@ pub enum StorageError {
     Io(#[from] std::io::Error),
 }
 
+pub trait StorageBackend: Sync + Send {
+    fn read_page(&self, page_id: PageId, page: &mut Page) -> Result<(), StorageError>;
+    fn write_page(&self, page: &Page, page_id: PageId) -> Result<(), StorageError>;
+    fn fsync(&self);
+    fn allocate_page(&self) -> PageId;
+    fn last_page_id(&self) -> PageId;
+}
+
 /// Manages the on-disk storage of table pages.
 ///
 /// The `Storage` struct is responsible for reading from and writing to the database file.
 /// It uses direct I/O to bypass the operating system's buffer cache, ensuring that data
 /// is written directly to the disk.
-pub struct Storage {
+pub struct FileStorage {
     file: File,
 }
 
-impl Storage {
+impl FileStorage {
     /// Creates a new storage file.
     ///
     /// Returns a `Result` containing the `Storage` instance if successful, or a `StorageError` on failure.
@@ -59,11 +67,13 @@ impl Storage {
 
         Ok(Self { file })
     }
+}
 
+impl StorageBackend for FileStorage {
     /// Reads a page from the database file.
     ///
     /// Returns an empty `Result` if successful, or a `StorageError` on failure.
-    pub fn read_page(&self, page_id: PageId, page: &mut Page) -> Result<(), StorageError> {
+    fn read_page(&self, page_id: PageId, page: &mut Page) -> Result<(), StorageError> {
         let offset = page_id.get() as u64 * PAGE_SIZE as u64;
 
         self.file
@@ -76,7 +86,7 @@ impl Storage {
     /// Writes a page to the database file.
     ///
     /// Returns an empty `Result` if successful, or a `StorageError` on failure.
-    pub fn write_page(&self, page: &Page, page_id: PageId) -> Result<(), StorageError> {
+    fn write_page(&self, page: &Page, page_id: PageId) -> Result<(), StorageError> {
         let offset = page_id.get() as u64 * PAGE_SIZE as u64;
 
         self.file
@@ -93,7 +103,7 @@ impl Storage {
     /// # Panics
     ///
     /// Panics if the underlying `File::sync_all` operation fails.
-    pub fn fsync(&self) {
+    fn fsync(&self) {
         let result = self.file.sync_all();
         if result.is_err() {
             // if fsync fails, we can't make sure data is flushed to disk
@@ -103,7 +113,7 @@ impl Storage {
     }
 
     /// Allocates a new page and returns the ID of the last page in the database file.
-    pub fn allocate_page(&self) -> PageId {
+    fn allocate_page(&self) -> PageId {
         let offset = self.file.metadata().unwrap().len();
         self.file.write_all_at(&[0; PAGE_SIZE], offset).unwrap();
         PageId::new((offset / PAGE_SIZE as u64) as u32)
@@ -112,7 +122,7 @@ impl Storage {
     /// Retreives the last allocated page id.
     ///
     /// TODO: implement a free space map for more efficent storage.
-    pub fn last_page_id(&self) -> PageId {
+    fn last_page_id(&self) -> PageId {
         let offset = self.file.metadata().unwrap().len();
         PageId::new(((offset / PAGE_SIZE as u64) - 1) as u32)
     }
