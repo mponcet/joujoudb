@@ -2,8 +2,6 @@ use crate::cache::memcache::MemCache;
 use crate::pages::PageId;
 use crate::storage::{Storage, StorageError};
 
-use parking_lot::Mutex;
-
 use super::memcache::{MemCacheError, PageRef, PageRefMut};
 use thiserror::Error;
 
@@ -22,7 +20,7 @@ pub enum PageCacheError {
 /// - Evicting pages from memory when the cache is full.
 /// - Writing dirty pages back to the disk.
 pub struct PageCache {
-    storage: Mutex<Storage>,
+    storage: Storage,
     mem_cache: MemCache,
 }
 
@@ -30,7 +28,7 @@ impl PageCache {
     /// Creates a new `PageCache` with the given storage backend.
     pub fn try_new(storage: Storage) -> Result<Self, PageCacheError> {
         Ok(Self {
-            storage: Mutex::new(storage),
+            storage,
             mem_cache: MemCache::try_new().map_err(PageCacheError::MemCache)?,
         })
     }
@@ -41,15 +39,14 @@ impl PageCache {
     ///
     /// Returns a mutable reference to the new page.
     pub fn new_page(&self) -> Result<PageRefMut<'_>, PageCacheError> {
-        let mut storage = self.storage.lock();
-        let page_id = storage.allocate_page();
+        let page_id = self.storage.allocate_page();
 
         // try evict a page if the memory cache is full
         // FIXME: race condition
         if let Some(page_id) = self.mem_cache.evict() {
             if let Ok(page) = self.mem_cache.get_page(page_id) {
-                storage.write_page(&page, page_id)?;
-                storage.flush();
+                self.storage.write_page(&page, page_id)?;
+                self.storage.fsync();
             };
 
             self.mem_cache.remove_page(page_id)?;
@@ -73,8 +70,7 @@ impl PageCache {
                 .map_err(PageCacheError::MemCache)?;
 
             {
-                let mut storage = self.storage.lock();
-                storage
+                self.storage
                     .read_page(page_id, new_page_ref.page_mut())
                     .map_err(PageCacheError::Storage)?;
             }
@@ -95,11 +91,9 @@ impl PageCache {
                 .new_page_mut(page_id)
                 .map_err(PageCacheError::MemCache)?;
 
-            let mut storage = self.storage.lock();
-            storage
+            self.storage
                 .read_page(page_id, new_page_ref.page_mut())
                 .map_err(PageCacheError::Storage)?;
-            drop(storage);
 
             Ok(new_page_ref)
         }
@@ -107,7 +101,7 @@ impl PageCache {
 
     /// Retrieves the last page id from the storage backend.
     pub fn last_page_id(&self) -> PageId {
-        self.storage.lock().last_page_id()
+        self.storage.last_page_id()
     }
 }
 
