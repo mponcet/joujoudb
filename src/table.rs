@@ -1,15 +1,15 @@
 use crate::cache::{PageCache, PageCacheError};
 use crate::pages::{HeapPageError, RecordId};
 use crate::sql::schema::Schema;
-use crate::storage::Storage;
+use crate::storage::StorageBackend;
 use crate::tuple::Tuple;
 
 use thiserror::Error;
 
-pub struct Table {
+pub struct Table<S: StorageBackend> {
     pub name: String,
     pub schema: Schema,
-    page_cache: PageCache,
+    page_cache: PageCache<S>,
 }
 
 #[derive(Debug, Error)]
@@ -20,8 +20,8 @@ pub enum TableError {
     PageCache(#[from] PageCacheError),
 }
 
-impl Table {
-    pub fn try_new(name: &str, storage: Storage, schema: Schema) -> Result<Self, TableError> {
+impl<S: StorageBackend> Table<S> {
+    pub fn try_new(name: &str, storage: S, schema: Schema) -> Result<Self, TableError> {
         let page_cache = PageCache::try_new(storage).map_err(TableError::PageCache)?;
         Ok(Self {
             name: name.to_string(),

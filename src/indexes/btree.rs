@@ -2,7 +2,7 @@ use crate::cache::{PageCache, PageCacheError, PageRef, PageRefMut};
 use crate::pages::{
     BTreePageError, BTreePageType, Key, PAGE_INVALID, PAGE_RESERVED, PageId, RecordId,
 };
-use crate::storage::Storage;
+use crate::storage::StorageBackend;
 
 use crate::pages::btree_get_page_type;
 
@@ -51,8 +51,8 @@ use thiserror::Error;
 ///           |                |                |                |
 ///           +----------------+----------------+----------------+  (Linked list)
 /// ```
-pub struct BTree {
-    page_cache: PageCache,
+pub struct BTree<S: StorageBackend> {
+    page_cache: PageCache<S>,
 }
 
 #[derive(Error, Debug)]
@@ -63,11 +63,11 @@ pub enum BTreeError {
     PageCache(#[from] PageCacheError),
 }
 
-impl BTree {
+impl<S: StorageBackend> BTree<S> {
     /// Creates a new B-tree.
     ///
     /// Returns a `Result` containing the new `BTree` instance, or a `BTreeError` on failure.
-    pub fn try_new(storage: Storage) -> Result<Self, BTreeError> {
+    pub fn try_new(storage: S) -> Result<Self, BTreeError> {
         let page_cache = PageCache::try_new(storage).map_err(BTreeError::PageCache)?;
         let mut superblock_ref = page_cache.get_page_mut(PAGE_RESERVED)?;
         let superblock = superblock_ref.btree_superblock_mut();
@@ -289,7 +289,7 @@ impl BTree {
     /// Creates an iterator over a range of keys.
     ///
     /// Returns a `Result` containing the `BTreeRangeIterator`, or a `BTreeError` on failure.
-    pub fn iter(&self, start: Key) -> Result<BTreeRangeIterator<'_>, BTreeError> {
+    pub fn iter(&self, start: Key) -> Result<BTreeRangeIterator<'_, S>, BTreeError> {
         let page_ref = self.find_leaf_page(start)?;
         let leaf_page = page_ref.btree_leaf_page();
         // FIXME: what if the key doesn't exist ?
@@ -306,13 +306,13 @@ impl BTree {
     }
 }
 
-pub struct BTreeRangeIterator<'btree> {
+pub struct BTreeRangeIterator<'btree, S: StorageBackend> {
     pos: usize,
-    btree: &'btree BTree,
+    btree: &'btree BTree<S>,
     page_ref: PageRef<'btree>,
 }
 
-impl<'btree> Iterator for BTreeRangeIterator<'btree> {
+impl<'btree, S: StorageBackend> Iterator for BTreeRangeIterator<'btree, S> {
     type Item = (Key, RecordId);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -346,6 +346,7 @@ mod tests {
     use super::*;
 
     use crate::pages::HeapPageSlotId;
+    use crate::storage::FileStorage;
 
     use std::{collections::VecDeque, sync::Arc};
 
@@ -353,9 +354,9 @@ mod tests {
 
     const NR_KEYS: usize = 1000;
 
-    fn create_btree() -> BTree {
+    fn create_btree() -> BTree<FileStorage> {
         let storage_path = NamedTempFile::new().unwrap();
-        let storage = Storage::create(storage_path).unwrap();
+        let storage = FileStorage::create(storage_path).unwrap();
         BTree::try_new(storage).unwrap()
     }
 
@@ -364,7 +365,7 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    fn print_btree(btree: &BTree) {
+    fn print_btree(btree: &BTree<FileStorage>) {
         let root_page_id = {
             let superblock_ref = btree.page_cache.get_page(PAGE_RESERVED).unwrap();
             let superblock = superblock_ref.btree_superblock();
