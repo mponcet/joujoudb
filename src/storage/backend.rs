@@ -63,7 +63,7 @@ impl Storage {
     /// Reads a page from the database file.
     ///
     /// Returns an empty `Result` if successful, or a `StorageError` on failure.
-    pub fn read_page(&mut self, page_id: PageId, page: &mut Page) -> Result<(), StorageError> {
+    pub fn read_page(&self, page_id: PageId, page: &mut Page) -> Result<(), StorageError> {
         let offset = page_id.get() as u64 * PAGE_SIZE as u64;
 
         self.file
@@ -76,7 +76,7 @@ impl Storage {
     /// Writes a page to the database file.
     ///
     /// Returns an empty `Result` if successful, or a `StorageError` on failure.
-    pub fn write_page(&mut self, page: &Page, page_id: PageId) -> Result<(), StorageError> {
+    pub fn write_page(&self, page: &Page, page_id: PageId) -> Result<(), StorageError> {
         let offset = page_id.get() as u64 * PAGE_SIZE as u64;
 
         self.file
@@ -86,15 +86,15 @@ impl Storage {
         Ok(())
     }
 
-    /// Flushes any buffered data to the disk.
+    /// Attempts to sync file data and metadata to the disk.
     ///
     /// This function ensures that all data is written to the underlying storage device.
     ///
     /// # Panics
     ///
-    /// Panics if the underlying `fsync` operation fails.
-    pub fn flush(&mut self) {
-        let result = self.file.flush();
+    /// Panics if the underlying `File::sync_all` operation fails.
+    pub fn fsync(&self) {
+        let result = self.file.sync_all();
         if result.is_err() {
             // if fsync fails, we can't make sure data is flushed to disk
             // ref: https://wiki.postgresql.org/wiki/Fsync_Errors
@@ -103,7 +103,7 @@ impl Storage {
     }
 
     /// Allocates a new page and returns the ID of the last page in the database file.
-    pub fn allocate_page(&mut self) -> PageId {
+    pub fn allocate_page(&self) -> PageId {
         let offset = self.file.metadata().unwrap().len();
         self.file.write_all_at(&[0; PAGE_SIZE], offset).unwrap();
         PageId::new((offset / PAGE_SIZE as u64) as u32)
