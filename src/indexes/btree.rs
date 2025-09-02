@@ -1,4 +1,4 @@
-use crate::cache::{PageCache, PageCacheError, PageRef, PageRefMut};
+use crate::cache::{PageCacheError, PageRef, PageRefMut, StoragePageCache};
 use crate::pages::{
     BTreePageError, BTreePageType, Key, PAGE_INVALID, PAGE_RESERVED, PageId, RecordId,
 };
@@ -51,8 +51,8 @@ use thiserror::Error;
 ///           |                |                |                |
 ///           +----------------+----------------+----------------+  (Linked list)
 /// ```
-pub struct BTree<S: StorageBackend> {
-    page_cache: PageCache<S>,
+pub struct BTree<'pagecache, S: StorageBackend> {
+    page_cache: StoragePageCache<'pagecache, S>,
 }
 
 #[derive(Error, Debug)]
@@ -63,12 +63,11 @@ pub enum BTreeError {
     PageCache(#[from] PageCacheError),
 }
 
-impl<S: StorageBackend> BTree<S> {
+impl<'pagecache, S: StorageBackend> BTree<'pagecache, S> {
     /// Creates a new B-tree.
     ///
     /// Returns a `Result` containing the new `BTree` instance, or a `BTreeError` on failure.
-    pub fn try_new(storage: S) -> Result<Self, BTreeError> {
-        let page_cache = PageCache::try_new(storage).map_err(BTreeError::PageCache)?;
+    pub fn try_new(page_cache: StoragePageCache<'pagecache, S>) -> Result<Self, BTreeError> {
         let mut superblock_ref = page_cache.get_page_mut(PAGE_RESERVED)?;
         let superblock = superblock_ref.btree_superblock_mut();
         let mut root_page_ref = page_cache.new_page().map_err(BTreeError::PageCache)?;
@@ -308,7 +307,7 @@ impl<S: StorageBackend> BTree<S> {
 
 pub struct BTreeRangeIterator<'btree, S: StorageBackend> {
     pos: usize,
-    btree: &'btree BTree<S>,
+    btree: &'btree BTree<'btree, S>,
     page_ref: PageRef<'btree>,
 }
 
@@ -345,6 +344,7 @@ impl<'btree, S: StorageBackend> Iterator for BTreeRangeIterator<'btree, S> {
 mod tests {
     use super::*;
 
+    use crate::cache::PageCache;
     use crate::pages::HeapPageSlotId;
     use crate::storage::FileStorage;
 
@@ -354,10 +354,12 @@ mod tests {
 
     const NR_KEYS: usize = 1000;
 
-    fn create_btree() -> BTree<FileStorage> {
+    fn create_btree() -> BTree<'static, FileStorage> {
         let storage_path = NamedTempFile::new().unwrap();
         let storage = FileStorage::create(storage_path).unwrap();
-        BTree::try_new(storage).unwrap()
+        let page_cache = Box::leak(Box::new(PageCache::try_new().unwrap()));
+        let file_cache = page_cache.cache_storage(storage);
+        BTree::try_new(file_cache).unwrap()
     }
 
     fn make_record() -> RecordId {

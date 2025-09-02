@@ -1,3 +1,5 @@
+use crate::storage::StorageId;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use zerocopy::little_endian::U32;
@@ -46,13 +48,15 @@ impl Page {
 
 pub struct PageMetadata {
     pub page_id: PageId,
+    pub storage_id: StorageId,
     dirty: bool,
     counter: AtomicUsize,
 }
 
 impl PageMetadata {
-    pub fn new(page_id: PageId) -> Self {
+    pub fn new(storage_id: StorageId, page_id: PageId) -> Self {
         Self {
+            storage_id,
             page_id,
             dirty: false,
             counter: AtomicUsize::new(0),

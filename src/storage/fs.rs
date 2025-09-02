@@ -161,10 +161,8 @@ impl DatabaseDirectory {
 
 #[derive(Debug)]
 pub struct DatabaseRootDirectory {
-    next_file_id: usize,
     root_dir: PathBuf,
     databases: HashMap<DatabaseName, DatabaseDirectory>,
-    file_ids: HashMap<(DatabaseName, TableName), usize>,
 }
 
 impl DatabaseRootDirectory {
@@ -181,10 +179,8 @@ impl DatabaseRootDirectory {
                 }
             }
             Ok(Self {
-                next_file_id: 0,
                 root_dir: root_dir.to_path_buf(),
                 databases,
-                file_ids: HashMap::new(),
             })
         } else {
             Err(Error::from(ErrorKind::NotADirectory))
@@ -228,9 +224,6 @@ impl DatabaseRootDirectory {
             .get_mut(db_name)
             .ok_or(Error::from(ErrorKind::NotFound))?;
         let table = db.create_table(table_name)?;
-        self.file_ids
-            .insert((db_name.clone(), table_name.clone()), self.next_file_id);
-        self.next_file_id += 1;
 
         Ok(table)
     }
@@ -241,9 +234,6 @@ impl DatabaseRootDirectory {
             .get_mut(db_name)
             .ok_or(Error::from(ErrorKind::NotFound))?;
         db.drop_table(table_name)?;
-        self.file_ids
-            .remove(&(db_name.clone(), table_name.clone()))
-            .unwrap();
 
         Ok(())
     }
@@ -252,13 +242,6 @@ impl DatabaseRootDirectory {
         let db = self.databases.get(db_name)?;
         let table = db.tables.get(table_name)?;
         Some(table.path())
-    }
-
-    /// Gets the unique file id associated with a table.
-    pub fn file_id(&self, db_name: &DatabaseName, table_name: &TableName) -> Option<usize> {
-        self.file_ids
-            .get(&(db_name.clone(), table_name.clone()))
-            .copied()
     }
 }
 
