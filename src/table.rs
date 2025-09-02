@@ -1,4 +1,4 @@
-use crate::cache::{PageCache, PageCacheError};
+use crate::cache::{PageCacheError, StoragePageCache};
 use crate::pages::{HeapPageError, RecordId};
 use crate::sql::schema::Schema;
 use crate::storage::StorageBackend;
@@ -6,10 +6,10 @@ use crate::tuple::Tuple;
 
 use thiserror::Error;
 
-pub struct Table<S: StorageBackend> {
+pub struct Table<'pagecache, S: StorageBackend> {
     pub name: String,
     pub schema: Schema,
-    page_cache: PageCache<S>,
+    file_cache: StoragePageCache<'pagecache, S>,
 }
 
 #[derive(Debug, Error)]
@@ -20,19 +20,22 @@ pub enum TableError {
     PageCache(#[from] PageCacheError),
 }
 
-impl<S: StorageBackend> Table<S> {
-    pub fn try_new(name: &str, storage: S, schema: Schema) -> Result<Self, TableError> {
-        let page_cache = PageCache::try_new(storage).map_err(TableError::PageCache)?;
+impl<'pagecache, S: StorageBackend> Table<'pagecache, S> {
+    pub fn try_new(
+        name: &str,
+        schema: Schema,
+        file_cache: StoragePageCache<'pagecache, S>,
+    ) -> Result<Self, TableError> {
         Ok(Self {
             name: name.to_string(),
             schema,
-            page_cache,
+            file_cache,
         })
     }
 
     pub fn get_tuple(&self, record_id: RecordId) -> Result<Tuple, TableError> {
         let page_ref = self
-            .page_cache
+            .file_cache
             .get_page(record_id.page_id)
             .map_err(TableError::PageCache)?;
         let heappage = page_ref.heap_page();
@@ -45,8 +48,8 @@ impl<S: StorageBackend> Table<S> {
 
     pub fn insert_tuple(&self, tuple: &Tuple) -> Result<(), TableError> {
         let mut page_ref = self
-            .page_cache
-            .get_page_mut(self.page_cache.last_page_id())
+            .file_cache
+            .get_page_mut(self.file_cache.last_page_id())
             .map_err(TableError::PageCache)?;
         let heappage = page_ref.heap_page_mut();
 
@@ -57,8 +60,8 @@ impl<S: StorageBackend> Table<S> {
 
     pub fn delete_tuple(&self, record_id: RecordId) -> Result<(), TableError> {
         let mut page_ref = self
-            .page_cache
-            .get_page_mut(self.page_cache.last_page_id())
+            .file_cache
+            .get_page_mut(self.file_cache.last_page_id())
             .map_err(TableError::PageCache)?;
         let heappage = page_ref.heap_page_mut();
 

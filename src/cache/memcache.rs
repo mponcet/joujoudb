@@ -2,6 +2,7 @@ use crate::cache::{EvictionPolicy, lru::LRU};
 use crate::config::CONFIG;
 use crate::pages::{BTreeInnerPage, BTreeLeafPage, BTreeSuperBlock, PAGE_INVALID, PAGE_SIZE};
 use crate::pages::{HeapPage, Page, PageId, PageMetadata};
+use crate::storage::StorageId;
 
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::cell::UnsafeCell;
@@ -26,8 +27,8 @@ struct UnsafePageMetadata(UnsafeCell<PageMetadata>);
 unsafe impl Sync for UnsafePageMetadata {}
 
 impl UnsafePageMetadata {
-    fn new(page_id: PageId) -> Self {
-        Self(UnsafeCell::new(PageMetadata::new(page_id)))
+    fn new(storage_id: StorageId, page_id: PageId) -> Self {
+        Self(UnsafeCell::new(PageMetadata::new(storage_id, page_id)))
     }
 }
 
@@ -44,7 +45,7 @@ impl Default for PageLatch {
 }
 
 struct PageTable {
-    map: HashMap<PageId, usize>,
+    map: HashMap<(StorageId, PageId), usize>,
     free_list: VecDeque<usize>,
 }
 
@@ -195,7 +196,7 @@ impl Drop for PageRef<'_> {
         if self.metadata.get_pin_counter() == 0 {
             self.eviction_policy
                 .lock()
-                .set_evictable(self.metadata.page_id)
+                .set_evictable(self.metadata.storage_id, self.metadata.page_id)
         }
     }
 }
@@ -207,7 +208,7 @@ impl Drop for PageRefMut<'_> {
         if self.metadata.get_pin_counter() == 0 {
             self.eviction_policy
                 .lock()
-                .set_evictable(self.metadata.page_id);
+                .set_evictable(self.metadata.storage_id, self.metadata.page_id);
         }
     }
 }
@@ -234,8 +235,10 @@ impl MemCache {
     pub fn try_new() -> Result<Self, MemCacheError> {
         let pages = MmapMut::map_anon(CONFIG.PAGE_CACHE_SIZE * PAGE_SIZE)
             .map_err(MemCacheError::MmapFailed)?;
-        let pages_metadata = std::iter::repeat_with(|| UnsafePageMetadata::new(PAGE_INVALID))
-            .take(CONFIG.PAGE_CACHE_SIZE);
+        let pages_metadata = std::iter::repeat_with(|| {
+            UnsafePageMetadata::new(StorageId(0) /* TODO */, PAGE_INVALID)
+        })
+        .take(CONFIG.PAGE_CACHE_SIZE);
         let pages_lock = std::iter::repeat_with(PageLatch::default).take(CONFIG.PAGE_CACHE_SIZE);
 
         Ok(Self {
@@ -275,12 +278,16 @@ impl MemCache {
         unsafe { &mut *(self.pages_metadata[idx].0.get()) }
     }
 
-    pub fn get_page(&self, page_id: PageId) -> Result<PageRef<'_>, MemCacheError> {
+    pub fn get_page(
+        &self,
+        storage_id: StorageId,
+        page_id: PageId,
+    ) -> Result<PageRef<'_>, MemCacheError> {
         let idx = {
             let page_table = self.page_table.lock();
             page_table
                 .map
-                .get(&page_id)
+                .get(&(storage_id, page_id))
                 .copied()
                 .ok_or(MemCacheError::PageNotFound)?
         };
@@ -293,8 +300,8 @@ impl MemCache {
 
         {
             let mut eviction_policy = self.eviction_policy.lock();
-            eviction_policy.record_access(page_id);
-            eviction_policy.set_unevictable(page_id);
+            eviction_policy.record_access(storage_id, page_id);
+            eviction_policy.set_unevictable(storage_id, page_id);
         }
 
         Ok(PageRef {
@@ -305,12 +312,16 @@ impl MemCache {
         })
     }
 
-    pub fn get_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, MemCacheError> {
+    pub fn get_page_mut(
+        &self,
+        storage_id: StorageId,
+        page_id: PageId,
+    ) -> Result<PageRefMut<'_>, MemCacheError> {
         let idx = {
             let page_table = self.page_table.lock();
             page_table
                 .map
-                .get(&page_id)
+                .get(&(storage_id, page_id))
                 .copied()
                 .ok_or(MemCacheError::PageNotFound)?
         };
@@ -324,8 +335,8 @@ impl MemCache {
 
         {
             let mut eviction_policy = self.eviction_policy.lock();
-            eviction_policy.record_access(page_id);
-            eviction_policy.set_unevictable(page_id);
+            eviction_policy.record_access(storage_id, page_id);
+            eviction_policy.set_unevictable(storage_id, page_id);
         }
 
         Ok(PageRefMut {
@@ -336,7 +347,11 @@ impl MemCache {
         })
     }
 
-    pub fn new_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, MemCacheError> {
+    pub fn new_page_mut(
+        &self,
+        storage_id: StorageId,
+        page_id: PageId,
+    ) -> Result<PageRefMut<'_>, MemCacheError> {
         let idx = {
             let mut page_table = self.page_table.lock();
             page_table
@@ -349,20 +364,20 @@ impl MemCache {
         let _guard = latch.write();
         let page = self.get_page_ref_mut(idx);
         let metadata = self.get_metadata_ref_mut(idx);
-        *metadata = PageMetadata::new(page_id);
+        *metadata = PageMetadata::new(storage_id, page_id);
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
 
         {
             let mut page_table = self.page_table.lock();
-            assert!(!page_table.map.contains_key(&page_id));
-            page_table.map.insert(page_id, idx);
+            assert!(!page_table.map.contains_key(&(storage_id, page_id)));
+            page_table.map.insert((storage_id, page_id), idx);
         }
 
         {
             let mut eviction_policy = self.eviction_policy.lock();
-            eviction_policy.record_access(page_id);
-            eviction_policy.set_unevictable(page_id);
+            eviction_policy.record_access(storage_id, page_id);
+            eviction_policy.set_unevictable(storage_id, page_id);
         }
 
         Ok(PageRefMut {
@@ -373,12 +388,12 @@ impl MemCache {
         })
     }
 
-    pub fn remove_page(&self, page_id: PageId) -> Result<(), MemCacheError> {
+    pub fn remove_page(&self, storage_id: StorageId, page_id: PageId) -> Result<(), MemCacheError> {
         let idx = {
             let mut page_table = self.page_table.lock();
             page_table
                 .map
-                .remove(&page_id)
+                .remove(&(storage_id, page_id))
                 .ok_or(MemCacheError::PageNotFound)?
         };
 
@@ -387,7 +402,7 @@ impl MemCache {
         let metadata = self.get_metadata_ref(idx);
         assert_eq!(metadata.get_pin_counter(), 0);
 
-        self.eviction_policy.lock().remove(page_id);
+        self.eviction_policy.lock().remove(storage_id, page_id);
         {
             let mut page_table = self.page_table.lock();
             page_table.free_list.push_back(idx);
@@ -396,7 +411,7 @@ impl MemCache {
         Ok(())
     }
 
-    pub fn evict(&self) -> Option<PageId> {
+    pub fn evict(&self) -> Option<(StorageId, PageId)> {
         let page_table = self.page_table.lock();
 
         if page_table.free_list.is_empty() {
@@ -415,6 +430,7 @@ mod tests {
 
     #[test]
     fn high_contention_scenario() {
+        let storage_id = StorageId(0);
         let cache = Arc::new(MemCache::try_new().unwrap());
 
         let mut handles = vec![];
@@ -426,21 +442,21 @@ mod tests {
                     let page_id = PageId::new(j as u32);
                     match thread_id {
                         0 => {
-                            let _ = cache.new_page_mut(page_id);
+                            let _ = cache.new_page_mut(storage_id, page_id);
                         }
                         1 => {
                             let page_id =
                                 PageId::new(CONFIG.PAGE_CACHE_SIZE as u32 / 2 + page_id.get());
-                            let _ = cache.new_page_mut(page_id);
+                            let _ = cache.new_page_mut(storage_id, page_id);
                         }
                         2..6 => {
-                            let _ = cache.get_page_mut(page_id);
+                            let _ = cache.get_page_mut(storage_id, page_id);
                         }
                         6..8 => {
-                            let _ = cache.remove_page(page_id);
+                            let _ = cache.remove_page(storage_id, page_id);
                         }
                         _ => {
-                            let _ = cache.get_page(page_id);
+                            let _ = cache.get_page(storage_id, page_id);
                         }
                     }
                 }

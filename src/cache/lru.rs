@@ -1,5 +1,6 @@
 use crate::cache::EvictionPolicy;
 use crate::pages::PageId;
+use crate::storage::StorageId;
 
 use std::collections::HashMap;
 
@@ -7,11 +8,11 @@ use priority_queue::PriorityQueue;
 
 #[allow(clippy::upper_case_acronyms)]
 pub struct LRU {
-    queue: PriorityQueue<PageId, i64>,
+    queue: PriorityQueue<(StorageId, PageId), i64>,
     // when a page is set unevictable and removed
     // from the priority queue, keep track of the
     // last access in a hashmap
-    last_access: HashMap<PageId, i64>,
+    last_access: HashMap<(StorageId, PageId), i64>,
 }
 
 impl LRU {
@@ -24,29 +25,29 @@ impl LRU {
 }
 
 impl EvictionPolicy for LRU {
-    fn record_access(&mut self, page_id: PageId) {
+    fn record_access(&mut self, storage_id: StorageId, page_id: PageId) {
         let now = chrono::Utc::now().timestamp_nanos_opt().unwrap();
-        self.last_access.insert(page_id, now);
-        self.queue.push(page_id, -now);
+        self.last_access.insert((storage_id, page_id), now);
+        self.queue.push((storage_id, page_id), -now);
     }
 
-    fn evict(&mut self) -> Option<PageId> {
-        self.queue.pop().map(|(page_id, _)| page_id)
+    fn evict(&mut self) -> Option<(StorageId, PageId)> {
+        self.queue.pop().map(|(ids, _)| ids)
     }
 
-    fn set_evictable(&mut self, page_id: PageId) {
-        if let Some(&timestamp) = self.last_access.get(&page_id) {
-            self.queue.push(page_id, -timestamp);
+    fn set_evictable(&mut self, storage_id: StorageId, page_id: PageId) {
+        if let Some(&timestamp) = self.last_access.get(&(storage_id, page_id)) {
+            self.queue.push((storage_id, page_id), -timestamp);
         }
     }
 
-    fn set_unevictable(&mut self, page_id: PageId) {
-        self.queue.remove(&page_id);
+    fn set_unevictable(&mut self, storage_id: StorageId, page_id: PageId) {
+        self.queue.remove(&(storage_id, page_id));
     }
 
-    fn remove(&mut self, page_id: PageId) {
-        self.queue.remove(&page_id);
-        self.last_access.remove(&page_id);
+    fn remove(&mut self, storage_id: StorageId, page_id: PageId) {
+        self.queue.remove(&(storage_id, page_id));
+        self.last_access.remove(&(storage_id, page_id));
     }
 }
 
@@ -57,14 +58,14 @@ mod tests {
     #[test]
     fn lru_eviction_policy() {
         let mut lru = LRU::new();
-        lru.record_access(PageId::new(0));
-        lru.set_evictable(PageId::new(0));
-        lru.record_access(PageId::new(1));
-        lru.set_evictable(PageId::new(1));
-        lru.record_access(PageId::new(2));
-        lru.set_evictable(PageId::new(2));
-        assert_eq!(lru.evict(), Some(PageId::new(0)));
-        lru.set_unevictable(PageId::new(1));
-        assert_eq!(lru.evict(), Some(PageId::new(2)));
+        lru.record_access(StorageId(0), PageId::new(0));
+        lru.set_evictable(StorageId(0), PageId::new(0));
+        lru.record_access(StorageId(0), PageId::new(1));
+        lru.set_evictable(StorageId(0), PageId::new(1));
+        lru.record_access(StorageId(0), PageId::new(2));
+        lru.set_evictable(StorageId(0), PageId::new(2));
+        assert_eq!(lru.evict(), Some((StorageId(0), PageId::new(0))));
+        lru.set_unevictable(StorageId(0), PageId::new(1));
+        assert_eq!(lru.evict(), Some((StorageId(0), PageId::new(2))));
     }
 }

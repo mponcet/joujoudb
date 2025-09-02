@@ -1,4 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
+use joujoudb::cache::PageCache;
 use std::hint::black_box;
 
 fn btree_contention_benchmark(c: &mut Criterion) {
@@ -50,8 +51,10 @@ use tempfile::NamedTempFile;
 fn btree_mixed_benchmark_call<const FAST_PATH: bool>(num_read_threads: usize) {
     let storage_path = NamedTempFile::new().unwrap();
     let storage = FileStorage::create(storage_path).unwrap();
+    let page_cache = Box::leak(Box::new(PageCache::try_new().unwrap()));
+    let file_cache = page_cache.cache_storage(storage);
+    let btree = Arc::new(BTree::try_new(file_cache).unwrap());
 
-    let btree = Arc::new(BTree::try_new(storage).unwrap());
     let mut threads = Vec::new();
     let btree_clone = Arc::clone(&btree);
     let start_key = 0;
@@ -98,12 +101,12 @@ fn btree_mixed_benchmark_call<const FAST_PATH: bool>(num_read_threads: usize) {
 fn btree_write_benchmark_call<const FAST_PATH: bool>(num_threads: usize) {
     let storage_path = NamedTempFile::new().unwrap();
     let storage = FileStorage::create(storage_path).unwrap();
-
-    let btree = Arc::new(BTree::try_new(storage).unwrap());
+    let page_cache = Box::leak(Box::new(PageCache::try_new().unwrap()));
+    let file_cache = page_cache.cache_storage(storage);
+    let btree = Arc::new(BTree::try_new(file_cache).unwrap());
 
     let keys_per_threads = 16000 / num_threads;
     const KEY_STRIDE: usize = 6400000;
-
     let mut threads = Vec::new();
 
     for i in 0..num_threads {

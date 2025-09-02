@@ -7,6 +7,9 @@ use std::path::Path;
 
 use thiserror::Error;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct StorageId(pub u32);
+
 #[derive(Error, Debug)]
 pub enum StorageError {
     #[error("io error")]
