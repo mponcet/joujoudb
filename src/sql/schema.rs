@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use thiserror::Error;
 use zerocopy_derive::*;
 
@@ -45,13 +47,15 @@ impl Constraints {
 }
 
 pub struct Column {
+    pub column_name: String,
     pub column_type: ColumnType,
     pub constraints: Constraints,
 }
 
 impl Column {
-    pub fn new(column_type: ColumnType, constraints: Constraints) -> Self {
+    pub fn new(column_name: String, column_type: ColumnType, constraints: Constraints) -> Self {
         Self {
+            column_name,
             column_type,
             constraints,
         }
@@ -63,8 +67,13 @@ pub struct Schema {
 }
 
 impl Schema {
-    pub fn new(columns: Vec<Column>) -> Self {
-        Self { columns }
+    pub fn try_new(columns: Vec<Column>) -> Result<Self, SchemaError> {
+        let mut uniq = HashSet::new();
+        if columns.iter().all(|c| uniq.insert(c.column_name.as_str())) {
+            Ok(Self { columns })
+        } else {
+            Err(SchemaError::UniqueName)
+        }
     }
 
     pub fn num_columns(&self) -> usize {
@@ -80,12 +89,8 @@ impl Schema {
 pub enum SchemaError {
     #[error("maximum number of columns reached")]
     TooManyColumns,
-}
-
-impl From<Vec<Column>> for Schema {
-    fn from(columns: Vec<Column>) -> Self {
-        Self { columns }
-    }
+    #[error("columns must have unique names")]
+    UniqueName,
 }
 
 #[cfg(test)]
@@ -95,15 +100,17 @@ mod tests {
     fn test_schema() -> Schema {
         let columns = vec![
             Column {
+                column_name: "a".into(),
                 column_type: ColumnType::BigInt,
                 constraints: Constraints::new(true, false),
             },
             Column {
+                column_name: "b".into(),
                 column_type: ColumnType::Char(32),
                 constraints: Constraints::new(false, false),
             },
         ];
 
-        Schema::from(columns)
+        Schema::try_new(columns).unwrap()
     }
 }
