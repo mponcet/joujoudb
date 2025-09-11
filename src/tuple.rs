@@ -170,13 +170,18 @@ mod tests {
 
     #[test]
     fn read_after_write() {
-        let schema = Schema::new(vec![
-            Column::new(ColumnType::BigInt, Constraints::default()),
-            Column::new(ColumnType::VarChar, Constraints::default()),
-            Column::new(ColumnType::Char(32), Constraints::default()),
-            Column::new(ColumnType::VarChar, Constraints::default()),
-            Column::new(ColumnType::VarChar, Constraints::new(true, false)),
-        ]);
+        let schema = Schema::try_new(vec![
+            Column::new("a".into(), ColumnType::BigInt, Constraints::default()),
+            Column::new("b".into(), ColumnType::VarChar, Constraints::default()),
+            Column::new("c".into(), ColumnType::Char(32), Constraints::default()),
+            Column::new("d".into(), ColumnType::VarChar, Constraints::default()),
+            Column::new(
+                "e".into(),
+                ColumnType::VarChar,
+                Constraints::new(true, false),
+            ),
+        ])
+        .unwrap();
         let values = vec![
             Value::BigInt(BigInt::new(42)),
             Value::VarChar(VarChar::new("aaaa".to_string())),

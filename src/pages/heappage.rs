@@ -279,11 +279,12 @@ mod tests {
     use super::*;
 
     fn test_schema() -> Schema {
-        Schema::new(vec![
-            Column::new(ColumnType::BigInt, Constraints::default()),
-            Column::new(ColumnType::VarChar, Constraints::default()),
-            Column::new(ColumnType::Char(32), Constraints::default()),
+        Schema::try_new(vec![
+            Column::new("a".into(), ColumnType::BigInt, Constraints::default()),
+            Column::new("b".into(), ColumnType::VarChar, Constraints::default()),
+            Column::new("c".into(), ColumnType::Char(32), Constraints::default()),
         ])
+        .unwrap()
     }
 
     fn test_values(varchar_len: usize, char_len: usize) -> Vec<Value> {
