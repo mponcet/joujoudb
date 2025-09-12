@@ -51,8 +51,8 @@ use thiserror::Error;
 ///           |                |                |                |
 ///           +----------------+----------------+----------------+  (Linked list)
 /// ```
-pub struct BTree<'pagecache, S: StorageBackend> {
-    page_cache: StoragePageCache<'pagecache, S>,
+pub struct BTree<S: StorageBackend> {
+    page_cache: StoragePageCache<S>,
 }
 
 #[derive(Error, Debug)]
@@ -63,11 +63,11 @@ pub enum BTreeError {
     PageCache(#[from] PageCacheError),
 }
 
-impl<'pagecache, S: StorageBackend> BTree<'pagecache, S> {
+impl<S: StorageBackend> BTree<S> {
     /// Creates a new B-tree.
     ///
     /// Returns a `Result` containing the new `BTree` instance, or a `BTreeError` on failure.
-    pub fn try_new(page_cache: StoragePageCache<'pagecache, S>) -> Result<Self, BTreeError> {
+    pub fn try_new(page_cache: StoragePageCache<S>) -> Result<Self, BTreeError> {
         let mut superblock_ref = page_cache.get_page_mut(PAGE_RESERVED)?;
         let superblock = superblock_ref.btree_superblock_mut();
         let mut root_page_ref = page_cache.new_page().map_err(BTreeError::PageCache)?;
@@ -307,7 +307,7 @@ impl<'pagecache, S: StorageBackend> BTree<'pagecache, S> {
 
 pub struct BTreeRangeIterator<'btree, S: StorageBackend> {
     pos: usize,
-    btree: &'btree BTree<'btree, S>,
+    btree: &'btree BTree<S>,
     page_ref: PageRef<'btree>,
 }
 
@@ -354,10 +354,10 @@ mod tests {
 
     const NR_KEYS: usize = 1000;
 
-    fn create_btree() -> BTree<'static, FileStorage> {
+    fn create_btree() -> BTree<FileStorage> {
         let storage_path = NamedTempFile::new().unwrap();
         let storage = FileStorage::create(storage_path).unwrap();
-        let page_cache = Box::leak(Box::new(PageCache::try_new().unwrap()));
+        let page_cache = PageCache::try_new().unwrap();
         let file_cache = page_cache.cache_storage(storage);
         BTree::try_new(file_cache).unwrap()
     }
