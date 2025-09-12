@@ -51,7 +51,7 @@ use tempfile::NamedTempFile;
 fn btree_mixed_benchmark_call<const FAST_PATH: bool>(num_read_threads: usize) {
     let storage_path = NamedTempFile::new().unwrap();
     let storage = FileStorage::create(storage_path).unwrap();
-    let page_cache = Box::leak(Box::new(PageCache::try_new().unwrap()));
+    let page_cache = PageCache::try_new().unwrap();
     let file_cache = page_cache.cache_storage(storage);
     let btree = Arc::new(BTree::try_new(file_cache).unwrap());
 
@@ -101,7 +101,7 @@ fn btree_mixed_benchmark_call<const FAST_PATH: bool>(num_read_threads: usize) {
 fn btree_write_benchmark_call<const FAST_PATH: bool>(num_threads: usize) {
     let storage_path = NamedTempFile::new().unwrap();
     let storage = FileStorage::create(storage_path).unwrap();
-    let page_cache = Box::leak(Box::new(PageCache::try_new().unwrap()));
+    let page_cache = PageCache::try_new().unwrap();
     let file_cache = page_cache.cache_storage(storage);
     let btree = Arc::new(BTree::try_new(file_cache).unwrap());
 
