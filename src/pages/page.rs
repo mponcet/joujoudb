@@ -1,6 +1,6 @@
 use crate::storage::StorageId;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use zerocopy::little_endian::U32;
 use zerocopy_derive::*;
@@ -10,7 +10,20 @@ pub const PAGE_INVALID: PageId = PageId(U32::new(0));
 /// The page id reserved for the superblock
 pub const PAGE_RESERVED: PageId = PageId(U32::new(0));
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Hash,
+    PartialOrd,
+    Ord,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+)]
 pub struct PageId(U32);
 
 impl PageId {
@@ -49,7 +62,7 @@ impl Page {
 pub struct PageMetadata {
     pub page_id: PageId,
     pub storage_id: StorageId,
-    dirty: bool,
+    dirty: AtomicBool,
     counter: AtomicUsize,
 }
 
@@ -58,21 +71,21 @@ impl PageMetadata {
         Self {
             storage_id,
             page_id,
-            dirty: false,
+            dirty: AtomicBool::new(false),
             counter: AtomicUsize::new(0),
         }
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        self.dirty.load(Ordering::Relaxed)
     }
 
-    pub fn set_dirty(&mut self) {
-        self.dirty = true;
+    pub fn set_dirty(&self) {
+        self.dirty.store(true, Ordering::Relaxed);
     }
 
-    pub fn clear_dirty(&mut self) {
-        self.dirty = false;
+    pub fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::Relaxed);
     }
 
     pub fn get_pin_counter(&self) -> usize {

@@ -111,10 +111,6 @@ impl<'page> PageRefMut<'page> {
         self.metadata
     }
 
-    pub fn metadata_mut(&mut self) -> &mut PageMetadata {
-        self.metadata
-    }
-
     pub fn heap_page(&self) -> &HeapPage {
         self.page().into()
     }
