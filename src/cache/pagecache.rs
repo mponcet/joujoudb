@@ -1,14 +1,19 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, LazyLock};
+use std::thread::JoinHandle;
 
 use crate::cache::memcache::MemCache;
+use crate::config::CONFIG;
 use crate::pages::PageId;
-use crate::storage::StorageId;
-use crate::storage::{StorageBackend, StorageError};
+use crate::storage::{FileStorage, StorageBackend, StorageError, StorageId};
 
 use super::memcache::{MemCacheError, PageRef, PageRefMut};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use thiserror::Error;
+
+pub static GLOBAL_PAGE_CACHE: LazyLock<PageCache<FileStorage>> =
+    LazyLock::new(|| PageCache::try_new().expect("Could not initialize global page cache"));
 
 #[derive(Error, Debug)]
 pub enum PageCacheError {
@@ -24,34 +29,26 @@ pub enum PageCacheError {
 /// - Fetching pages from the disk and loading them into memory.
 /// - Evicting pages from memory when the cache is full.
 /// - Writing dirty pages back to the disk.
-pub struct PageCache<S: StorageBackend> {
+pub struct PageCache<S: StorageBackend + 'static> {
     inner: Arc<PageCacheInner<S>>,
 }
 
-impl<S: StorageBackend> std::ops::Deref for PageCache<S> {
-    type Target = PageCacheInner<S>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-pub struct PageCacheInner<S: StorageBackend> {
-    next_storage_id: AtomicU32,
-    storage_backends: RwLock<HashMap<StorageId, S>>,
-    mem_cache: MemCache,
-}
-
-impl<S: StorageBackend> PageCache<S> {
+impl<S: StorageBackend + 'static> PageCache<S> {
     /// Creates a new `PageCache`.
     pub fn try_new() -> Result<Self, PageCacheError> {
-        Ok(Self {
+        let pagecache = Self {
             inner: Arc::new(PageCacheInner {
                 next_storage_id: AtomicU32::new(0),
                 storage_backends: RwLock::new(HashMap::new()),
                 mem_cache: MemCache::try_new().map_err(PageCacheError::MemCache)?,
+                dirty_pages: Mutex::new(None),
+                writeback_jh: Mutex::new(None),
             }),
-        })
+        };
+        let jh = Self::writeback_thread(&pagecache);
+        *pagecache.writeback_jh.lock() = Some(jh);
+
+        Ok(pagecache)
     }
 
     /// Adds a storage backend to the shared page cache.
@@ -68,6 +65,47 @@ impl<S: StorageBackend> PageCache<S> {
         }
     }
 
+    /// Runs a background thread to write dirty pages to storage.
+    ///
+    /// Thread stops when `Arc::strong_count(&pagecache) == 0`.
+    fn writeback_thread(&self) -> JoinHandle<()> {
+        let weak = Arc::downgrade(&self.inner);
+        std::thread::spawn(move || {
+            while let Some(pagecache) = weak.upgrade() {
+                pagecache.writeback_dirty_pages();
+                drop(pagecache);
+                std::thread::sleep(CONFIG.WRITEBACK_INTERVAL_MS);
+            }
+        })
+    }
+}
+
+impl<S: StorageBackend + 'static> std::ops::Deref for PageCache<S> {
+    type Target = PageCacheInner<S>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+pub struct PageCacheInner<S: StorageBackend + 'static> {
+    next_storage_id: AtomicU32,
+    storage_backends: RwLock<HashMap<StorageId, S>>,
+    mem_cache: MemCache,
+    dirty_pages: Mutex<Option<HashMap<StorageId, BTreeSet<PageId>>>>,
+    writeback_jh: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl<S: StorageBackend + 'static> Drop for PageCacheInner<S> {
+    fn drop(&mut self) {
+        if let Some(jh) = self.writeback_jh.lock().take() {
+            let _ = jh.join();
+        }
+        self.writeback_dirty_pages();
+    }
+}
+
+impl<S: StorageBackend + 'static> PageCacheInner<S> {
     /// Creates a new page, both in the cache and on disk.
     ///
     /// If the cache is full, it will try to evict a page to make space.
@@ -148,6 +186,44 @@ impl<S: StorageBackend> PageCache<S> {
         }
     }
 
+    pub fn set_page_dirty(&self, storage_id: StorageId, page_ref: &mut PageRefMut) {
+        let metadata = page_ref.metadata();
+        let page_id = metadata.page_id;
+        page_ref.metadata().set_dirty();
+        self.dirty_pages
+            .lock()
+            .get_or_insert_default()
+            .entry(storage_id)
+            .and_modify(|h| {
+                h.insert(page_id);
+            })
+            .or_insert(BTreeSet::from([page_id]));
+    }
+
+    fn writeback_dirty_pages(&self) {
+        // Storage io can block: get dirty pages and release the lock.
+        let dirty_pages = self.dirty_pages.lock().take();
+        if let Some(dirty_pages) = dirty_pages {
+            for (storage_id, page_ids) in dirty_pages {
+                let guard = self.storage_backends.read();
+                let storage = guard.get(&storage_id).unwrap();
+
+                for page_id in page_ids {
+                    let page_ref = self
+                        .get_page(storage_id, page_id)
+                        .expect("writeback failed");
+                    if page_ref.metadata().is_dirty() {
+                        storage
+                            .write_page(page_ref.page(), page_id)
+                            .expect("write_page failed");
+                        page_ref.metadata().clear_dirty();
+                    }
+                }
+                storage.fsync();
+            }
+        }
+    }
+
     /// Retrieves the last page id from the storage backend.
     pub fn last_page_id(&self, storage_id: StorageId) -> PageId {
         let guard = self.storage_backends.read();
@@ -167,18 +243,31 @@ impl<S: StorageBackend> Clone for PageCache<S> {
 /// A page cache for a `StorageBackend` (a file for example) backed by a global `PageCache`.
 ///
 /// Created with `PageCache::cache_storage`.
-pub struct StoragePageCache<S: StorageBackend> {
+pub struct StoragePageCache<S: StorageBackend + 'static> {
     pagecache: PageCache<S>,
     storage_id: StorageId,
 }
 
-impl<S: StorageBackend> StoragePageCache<S> {
+impl<S: StorageBackend> Clone for StoragePageCache<S> {
+    fn clone(&self) -> Self {
+        Self {
+            pagecache: self.pagecache.clone(),
+            storage_id: self.storage_id,
+        }
+    }
+}
+
+impl<S: StorageBackend + 'static> StoragePageCache<S> {
     pub fn new_page(&self) -> Result<PageRefMut<'_>, PageCacheError> {
         self.pagecache.new_page(self.storage_id)
     }
 
     pub fn get_page(&self, page_id: PageId) -> Result<PageRef<'_>, PageCacheError> {
         self.pagecache.get_page(self.storage_id, page_id)
+    }
+
+    pub fn set_page_dirty(&self, page_ref: &mut PageRefMut) {
+        self.pagecache.set_page_dirty(self.storage_id, page_ref);
     }
 
     pub fn get_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, PageCacheError> {

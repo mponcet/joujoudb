@@ -51,7 +51,7 @@ use thiserror::Error;
 ///           |                |                |                |
 ///           +----------------+----------------+----------------+  (Linked list)
 /// ```
-pub struct BTree<S: StorageBackend> {
+pub struct BTree<S: StorageBackend + 'static> {
     page_cache: StoragePageCache<S>,
 }
 
@@ -63,7 +63,15 @@ pub enum BTreeError {
     PageCache(#[from] PageCacheError),
 }
 
-impl<S: StorageBackend> BTree<S> {
+impl<S: StorageBackend> Clone for BTree<S> {
+    fn clone(&self) -> Self {
+        Self {
+            page_cache: self.page_cache.clone(),
+        }
+    }
+}
+
+impl<S: StorageBackend + 'static> BTree<S> {
     /// Creates a new B-tree.
     ///
     /// Returns a `Result` containing the new `BTree` instance, or a `BTreeError` on failure.
@@ -196,8 +204,8 @@ impl<S: StorageBackend> BTree<S> {
             rhs_inner_page.init_header();
             let split_key = split.split(rhs_inner_page, split_key, rhs_page_id);
 
-            inner_page_ref.metadata_mut().set_dirty();
-            rhs_inner_page_ref.metadata_mut().set_dirty();
+            self.page_cache.set_page_dirty(inner_page_ref);
+            self.page_cache.set_page_dirty(&mut rhs_inner_page_ref);
 
             Ok(Some((split_key, rhs_inner_page_id)))
         } else {
@@ -220,8 +228,8 @@ impl<S: StorageBackend> BTree<S> {
             let rhs_page_id = rhs_page_ref.metadata().page_id;
             lhs.set_next_page_id(rhs_page_id);
 
-            lhs_page_ref.metadata_mut().set_dirty();
-            rhs_page_ref.metadata_mut().set_dirty();
+            self.page_cache.set_page_dirty(lhs_page_ref);
+            self.page_cache.set_page_dirty(&mut rhs_page_ref);
 
             Ok(Some((split_key, rhs_page_id)))
         } else {
@@ -243,6 +251,7 @@ impl<S: StorageBackend> BTree<S> {
             drop(leaf_page_ref);
             self.insert_slow_path(key, record_id)
         } else {
+            self.page_cache.set_page_dirty(&mut leaf_page_ref);
             Ok(())
         }
     }
@@ -269,7 +278,7 @@ impl<S: StorageBackend> BTree<S> {
             let new_root_page_id = new_root_page_ref.metadata().page_id;
             let new_root_page = new_root_page_ref.btree_inner_page_mut();
             new_root_page.init(split_key, root_page_id, rhs_page_id);
-            new_root_page_ref.metadata_mut().set_dirty();
+            self.page_cache.set_page_dirty(&mut new_root_page_ref);
             superblock.root_page_id = new_root_page_id;
         }
 
@@ -282,7 +291,12 @@ impl<S: StorageBackend> BTree<S> {
     pub fn delete(&self, key: Key) -> Result<(), BTreeError> {
         let mut leaf_page_ref = self.find_leaf_page_mut(key)?;
         let leaf_page = leaf_page_ref.btree_leaf_page_mut();
-        leaf_page.delete(key).map_err(BTreeError::Page)
+        leaf_page
+            .delete(key)
+            .map(|_| {
+                self.page_cache.set_page_dirty(&mut leaf_page_ref);
+            })
+            .map_err(BTreeError::Page)
     }
 
     /// Creates an iterator over a range of keys.
@@ -305,13 +319,13 @@ impl<S: StorageBackend> BTree<S> {
     }
 }
 
-pub struct BTreeRangeIterator<'btree, S: StorageBackend> {
+pub struct BTreeRangeIterator<'btree, S: StorageBackend + 'static> {
     pos: usize,
     btree: &'btree BTree<S>,
     page_ref: PageRef<'btree>,
 }
 
-impl<'btree, S: StorageBackend> Iterator for BTreeRangeIterator<'btree, S> {
+impl<'btree, S: StorageBackend + 'static> Iterator for BTreeRangeIterator<'btree, S> {
     type Item = (Key, RecordId);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -566,7 +580,7 @@ mod tests {
     fn concurrent_insert() {
         const NUM_THREADS: usize = 8;
         const KEYS_PER_THREAD: usize = 10000;
-        let btree = Arc::new(create_btree());
+        let btree = create_btree();
         let mut handles = Vec::new();
 
         for i in 0..NUM_THREADS {
