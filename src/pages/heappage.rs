@@ -248,6 +248,7 @@ impl HeapPage {
     ///
     /// Returns a `Result` containing a `Tuple` reference, or a `HeapPageError` if the slot is not found or has been deleted.
     pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<&TupleRef, HeapPageError> {
+        println!("num_slots={}", self.header.num_slots.get());
         let slot = self.get_slot(slot_id).ok_or(HeapPageError::SlotNotFound)?;
         let (idx, len) = (slot.offset(), slot.len());
 
@@ -256,6 +257,11 @@ impl HeapPage {
         } else {
             Ok(TupleRef::ref_from_bytes(&self.data[idx..idx + len]).unwrap())
         }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &TupleRef> {
+        (0..self.header.num_slots.get())
+            .filter_map(|slot_id| self.get_tuple(HeapPageSlotId::new(slot_id)).ok())
     }
 }
 

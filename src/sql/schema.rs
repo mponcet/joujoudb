@@ -46,6 +46,7 @@ impl Constraints {
     }
 }
 
+#[derive(Clone)]
 pub struct Column {
     pub column_name: String,
     pub column_type: ColumnType,
@@ -62,6 +63,7 @@ impl Column {
     }
 }
 
+#[derive(Clone)]
 pub struct Schema {
     columns: Vec<Column>,
 }
