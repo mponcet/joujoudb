@@ -51,6 +51,7 @@ pub struct TupleRef {
 }
 
 /// A newly created tuple that owns its data.
+#[derive(Debug)]
 pub struct Tuple {
     values: Vec<Value>,
 }

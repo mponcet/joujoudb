@@ -10,6 +10,16 @@ pub enum ColumnType {
     BigInt,
 }
 
+impl From<ColumnType> for String {
+    fn from(column_type: ColumnType) -> Self {
+        match column_type {
+            ColumnType::Char(n) => format!("CHAR({n}"),
+            ColumnType::VarChar => "VARCHAR".to_string(),
+            ColumnType::BigInt => "BIGINT".to_string(),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Default, TryFromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct Constraints(u8);
@@ -46,6 +56,7 @@ impl Constraints {
     }
 }
 
+#[derive(Clone)]
 pub struct Column {
     pub column_name: String,
     pub column_type: ColumnType,
@@ -62,6 +73,7 @@ impl Column {
     }
 }
 
+#[derive(Clone)]
 pub struct Schema {
     columns: Vec<Column>,
 }

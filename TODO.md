@@ -1,0 +1,11 @@
+- pub vs pub(super)
+- more tests, dedicated tests directory
+- watch CMU
+- place tombestone instead of deleting keys in btree
+- have different possible key type in btree
+- duplicate keys in btree
+- page directory on disk ? need a pages map
+- tracing
+- pagecache writeback
+- integration tests: durability tests
+- rename columntype -> datatype (see information_schema)
