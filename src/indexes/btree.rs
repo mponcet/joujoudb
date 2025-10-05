@@ -204,8 +204,9 @@ impl<S: StorageBackend + 'static> BTree<S> {
             rhs_inner_page.init_header();
             let split_key = split.split(rhs_inner_page, split_key, rhs_page_id);
 
-            self.page_cache.set_page_dirty(inner_page_ref);
-            self.page_cache.set_page_dirty(&mut rhs_inner_page_ref);
+            self.page_cache.set_page_dirty(inner_page_ref.metadata());
+            self.page_cache
+                .set_page_dirty(rhs_inner_page_ref.metadata());
 
             Ok(Some((split_key, rhs_inner_page_id)))
         } else {
@@ -228,8 +229,8 @@ impl<S: StorageBackend + 'static> BTree<S> {
             let rhs_page_id = rhs_page_ref.metadata().page_id;
             lhs.set_next_page_id(rhs_page_id);
 
-            self.page_cache.set_page_dirty(lhs_page_ref);
-            self.page_cache.set_page_dirty(&mut rhs_page_ref);
+            self.page_cache.set_page_dirty(lhs_page_ref.metadata());
+            self.page_cache.set_page_dirty(rhs_page_ref.metadata());
 
             Ok(Some((split_key, rhs_page_id)))
         } else {
@@ -251,7 +252,7 @@ impl<S: StorageBackend + 'static> BTree<S> {
             drop(leaf_page_ref);
             self.insert_slow_path(key, record_id)
         } else {
-            self.page_cache.set_page_dirty(&mut leaf_page_ref);
+            self.page_cache.set_page_dirty(leaf_page_ref.metadata());
             Ok(())
         }
     }
@@ -278,7 +279,7 @@ impl<S: StorageBackend + 'static> BTree<S> {
             let new_root_page_id = new_root_page_ref.metadata().page_id;
             let new_root_page = new_root_page_ref.btree_inner_page_mut();
             new_root_page.init(split_key, root_page_id, rhs_page_id);
-            self.page_cache.set_page_dirty(&mut new_root_page_ref);
+            self.page_cache.set_page_dirty(new_root_page_ref.metadata());
             superblock.root_page_id = new_root_page_id;
         }
 
@@ -294,7 +295,7 @@ impl<S: StorageBackend + 'static> BTree<S> {
         leaf_page
             .delete(key)
             .map(|_| {
-                self.page_cache.set_page_dirty(&mut leaf_page_ref);
+                self.page_cache.set_page_dirty(leaf_page_ref.metadata());
             })
             .map_err(BTreeError::Page)
     }

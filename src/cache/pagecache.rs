@@ -5,7 +5,7 @@ use std::thread::JoinHandle;
 
 use crate::cache::memcache::MemCache;
 use crate::config::CONFIG;
-use crate::pages::PageId;
+use crate::pages::{PageId, PageMetadata};
 use crate::storage::{FileStorage, StorageBackend, StorageError, StorageId};
 
 use super::memcache::{MemCacheError, PageRef, PageRefMut};
@@ -186,18 +186,16 @@ impl<S: StorageBackend + 'static> PageCacheInner<S> {
         }
     }
 
-    pub fn set_page_dirty(&self, storage_id: StorageId, page_ref: &mut PageRefMut) {
-        let metadata = page_ref.metadata();
-        let page_id = metadata.page_id;
-        page_ref.metadata().set_dirty();
+    pub fn set_page_dirty(&self, storage_id: StorageId, metadata: &PageMetadata) {
+        metadata.set_dirty();
         self.dirty_pages
             .lock()
             .get_or_insert_default()
             .entry(storage_id)
             .and_modify(|h| {
-                h.insert(page_id);
+                h.insert(metadata.page_id);
             })
-            .or_insert(BTreeSet::from([page_id]));
+            .or_insert(BTreeSet::from([metadata.page_id]));
     }
 
     fn writeback_dirty_pages(&self) {
@@ -266,8 +264,8 @@ impl<S: StorageBackend + 'static> StoragePageCache<S> {
         self.pagecache.get_page(self.storage_id, page_id)
     }
 
-    pub fn set_page_dirty(&self, page_ref: &mut PageRefMut) {
-        self.pagecache.set_page_dirty(self.storage_id, page_ref);
+    pub fn set_page_dirty(&self, metadata: &PageMetadata) {
+        self.pagecache.set_page_dirty(self.storage_id, metadata);
     }
 
     pub fn get_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, PageCacheError> {
