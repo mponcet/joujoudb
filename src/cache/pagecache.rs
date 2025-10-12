@@ -222,6 +222,13 @@ impl<S: StorageBackend + 'static> PageCacheInner<S> {
         }
     }
 
+    /// Retrives the first page from the storage backend.
+    pub fn first_page_id(&self, storage_id: StorageId) -> PageId {
+        let guard = self.storage_backends.read();
+        let storage = guard.get(&storage_id).unwrap();
+        storage.first_page_id()
+    }
+
     /// Retrieves the last page id from the storage backend.
     pub fn last_page_id(&self, storage_id: StorageId) -> PageId {
         let guard = self.storage_backends.read();
@@ -270,6 +277,9 @@ impl<S: StorageBackend + 'static> StoragePageCache<S> {
 
     pub fn get_page_mut(&self, page_id: PageId) -> Result<PageRefMut<'_>, PageCacheError> {
         self.pagecache.get_page_mut(self.storage_id, page_id)
+    }
+    pub fn first_page_id(&self) -> PageId {
+        self.pagecache.first_page_id(self.storage_id)
     }
 
     pub fn last_page_id(&self) -> PageId {
