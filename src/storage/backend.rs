@@ -21,6 +21,7 @@ pub trait StorageBackend: Sync + Send {
     fn write_page(&self, page: &Page, page_id: PageId) -> Result<(), StorageError>;
     fn fsync(&self);
     fn allocate_page(&self) -> PageId;
+    fn first_page_id(&self) -> PageId;
     fn last_page_id(&self) -> PageId;
 }
 
@@ -50,6 +51,7 @@ impl FileStorage {
         if file.metadata().unwrap().len() == 0 {
             // Create reserved page
             file.write_all(&[0; PAGE_SIZE]).unwrap();
+            file.sync_all().expect("fsync failed");
         }
 
         Ok(Self { file })
@@ -59,7 +61,7 @@ impl FileStorage {
     ///
     /// Returns a `Result` containing the `Storage` instance if successful, or a `StorageError` on failure.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, StorageError> {
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(false)
@@ -67,6 +69,12 @@ impl FileStorage {
             .custom_flags(libc::O_DIRECT)
             .open(path)
             .map_err(StorageError::Io)?;
+
+        if file.metadata().unwrap().len() == 0 {
+            // Create reserved page
+            file.write_all(&[0; PAGE_SIZE]).unwrap();
+            file.sync_all().expect("fsync failed");
+        }
 
         Ok(Self { file })
     }
@@ -120,6 +128,10 @@ impl StorageBackend for FileStorage {
         let offset = self.file.metadata().unwrap().len();
         self.file.write_all_at(&[0; PAGE_SIZE], offset).unwrap();
         PageId::new((offset / PAGE_SIZE as u64) as u32)
+    }
+
+    fn first_page_id(&self) -> PageId {
+        PageId::new(0)
     }
 
     /// Retreives the last allocated page id.
