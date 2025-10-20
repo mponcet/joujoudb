@@ -51,6 +51,7 @@ pub struct TupleRef {
 }
 
 /// A newly created tuple that owns its data.
+#[derive(Debug)]
 pub struct Tuple {
     values: Vec<Value>,
 }
@@ -119,6 +120,18 @@ impl Tuple {
                 .iter()
                 .map(|v| v.header_len() + v.data_len())
                 .sum::<usize>()
+    }
+
+    /// Validates that this tuple conforms to the given schema.
+    ///
+    /// Returns `Ok(())` if the tuple is valid, or a `TupleError` if it is not.
+    pub fn validate(&self, schema: &Schema) -> Result<(), TupleError> {
+        if self.values.len() != schema.num_columns() {
+            return Err(TupleError::TooManyColumns);
+        }
+
+        // TODO: additional validation could be added here for type checking, constraints, etc.
+        Ok(())
     }
 
     #[cfg(test)]
