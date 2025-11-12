@@ -10,6 +10,7 @@ use std::collections::{HashMap, VecDeque};
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::slice;
+use std::sync::atomic::{Ordering, fence};
 
 use memmap2::MmapMut;
 use thiserror::Error;
@@ -188,24 +189,39 @@ impl DerefMut for PageRefMut<'_> {
 
 impl Drop for PageRef<'_> {
     fn drop(&mut self) {
-        self.metadata.unpin();
-        if self.metadata.get_pin_counter() == 0 {
-            self.eviction_policy
-                .lock()
-                .set_evictable(self.metadata.storage_id, self.metadata.page_id)
+        let old_counter = self.metadata.counter.fetch_sub(1, Ordering::Release);
+        if old_counter != 1 {
+            return;
         }
+
+        // Past this fence, operations happening before fetch_sub can't be reordered.
+        // This fence is needed to make sure access to the PageRef data happens before
+        // deletion / eviction of the PageRef data.
+        fence(Ordering::Acquire);
+
+        debug_assert_eq!(old_counter, 1);
+
+        self.eviction_policy
+            .lock()
+            .set_evictable(self.metadata.storage_id, self.metadata.page_id)
     }
 }
 
 impl Drop for PageRefMut<'_> {
     fn drop(&mut self) {
-        let old_counter = self.metadata.unpin();
-        assert_eq!(old_counter, 1);
-        if self.metadata.get_pin_counter() == 0 {
-            self.eviction_policy
-                .lock()
-                .set_evictable(self.metadata.storage_id, self.metadata.page_id);
+        let old_counter = self.metadata.counter.fetch_sub(1, Ordering::Release);
+        if old_counter != 1 {
+            return;
         }
+
+        // See PageRef.
+        fence(Ordering::Acquire);
+
+        debug_assert_eq!(old_counter, 1);
+
+        self.eviction_policy
+            .lock()
+            .set_evictable(self.metadata.storage_id, self.metadata.page_id);
     }
 }
 
