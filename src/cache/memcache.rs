@@ -263,7 +263,7 @@ impl MemCache {
     }
 
     #[inline]
-    unsafe fn get_page_ref(&self, idx: usize) -> &Page {
+    unsafe fn borrow_page(&self, idx: usize) -> &Page {
         let pages = unsafe {
             std::slice::from_raw_parts(self.pages.as_ptr() as *const Page, CONFIG.PAGE_CACHE_SIZE)
         };
@@ -274,7 +274,7 @@ impl MemCache {
 
     #[allow(clippy::mut_from_ref)]
     #[inline]
-    unsafe fn get_page_ref_mut(&self, idx: usize) -> &mut Page {
+    unsafe fn borrow_page_mut(&self, idx: usize) -> &mut Page {
         let pages: &mut [Page] = unsafe {
             slice::from_raw_parts_mut(self.pages.as_ptr() as *mut Page, CONFIG.PAGE_CACHE_SIZE)
         };
@@ -284,13 +284,13 @@ impl MemCache {
     }
 
     #[inline]
-    unsafe fn get_metadata_ref(&self, idx: usize) -> &PageMetadata {
+    unsafe fn borrow_page_metadata(&self, idx: usize) -> &PageMetadata {
         unsafe { &*(self.pages_metadata[idx].0.get()) }
     }
 
     #[allow(clippy::mut_from_ref)]
     #[inline]
-    unsafe fn get_metadata_ref_mut(&self, idx: usize) -> &mut PageMetadata {
+    unsafe fn borrow_page_metadata_mut(&self, idx: usize) -> &mut PageMetadata {
         unsafe { &mut *(self.pages_metadata[idx].0.get()) }
     }
 
@@ -310,8 +310,8 @@ impl MemCache {
 
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.read();
-        let page = unsafe { self.get_page_ref(idx) };
-        let metadata = unsafe { self.get_metadata_ref(idx) };
+        let page = unsafe { self.borrow_page(idx) };
+        let metadata = unsafe { self.borrow_page_metadata(idx) };
         metadata.pin();
 
         {
@@ -344,8 +344,8 @@ impl MemCache {
 
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.write();
-        let page = unsafe { self.get_page_ref_mut(idx) };
-        let metadata = unsafe { self.get_metadata_ref_mut(idx) };
+        let page = unsafe { self.borrow_page_mut(idx) };
+        let metadata = unsafe { self.borrow_page_metadata_mut(idx) };
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
 
@@ -378,8 +378,8 @@ impl MemCache {
 
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.write();
-        let page = unsafe { self.get_page_ref_mut(idx) };
-        let metadata = unsafe { self.get_metadata_ref_mut(idx) };
+        let page = unsafe { self.borrow_page_mut(idx) };
+        let metadata = unsafe { self.borrow_page_metadata_mut(idx) };
         *metadata = PageMetadata::new(storage_id, page_id);
         let old_counter = metadata.pin();
         assert_eq!(old_counter, 0);
@@ -415,7 +415,7 @@ impl MemCache {
 
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.write();
-        let metadata = unsafe { self.get_metadata_ref(idx) };
+        let metadata = unsafe { self.borrow_page_metadata(idx) };
         assert_eq!(metadata.get_pin_counter(), 0);
 
         self.eviction_policy.lock().remove(storage_id, page_id);
