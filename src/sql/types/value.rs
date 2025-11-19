@@ -5,7 +5,7 @@ use zerocopy::{
 use zerocopy_derive::*;
 
 use crate::serialize::{Deserialize, Serialize};
-use crate::sql::schema::ColumnType;
+use crate::sql::schema::DataType;
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
@@ -141,11 +141,11 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn from_bytes(bytes: &[u8], column_type: ColumnType) -> Self {
-        match column_type {
-            ColumnType::Char(n) => Self::Char(Deserialize::from_bytes(&bytes[..n])),
-            ColumnType::VarChar => Self::VarChar(Deserialize::from_bytes(bytes)),
-            ColumnType::BigInt => Self::BigInt(Deserialize::from_bytes(bytes)),
+    pub fn from_bytes(bytes: &[u8], data_type: DataType) -> Self {
+        match data_type {
+            DataType::Char(n) => Self::Char(Deserialize::from_bytes(&bytes[..n])),
+            DataType::VarChar => Self::VarChar(Deserialize::from_bytes(bytes)),
+            DataType::BigInt => Self::BigInt(Deserialize::from_bytes(bytes)),
         }
     }
 

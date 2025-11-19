@@ -65,7 +65,7 @@ impl TupleRef {
             if self.header.null_bitmap.is_null(i) {
                 values.push(Value::Null);
             } else {
-                let value = Value::from_bytes(&self.values[offset..], column.column_type);
+                let value = Value::from_bytes(&self.values[offset..], column.data_type);
                 offset += value.header_len();
                 offset += value.data_len();
                 values.push(value);
@@ -176,7 +176,7 @@ impl Serialize for Tuple {
 
 #[cfg(test)]
 mod tests {
-    use crate::sql::schema::{Column, ColumnType, Constraints};
+    use crate::sql::schema::{Column, Constraints, DataType};
     use crate::sql::types::{BigInt, Char, Value, VarChar};
 
     use super::*;
@@ -184,15 +184,11 @@ mod tests {
     #[test]
     fn read_after_write() {
         let schema = Schema::try_new(vec![
-            Column::new("a".into(), ColumnType::BigInt, Constraints::default()),
-            Column::new("b".into(), ColumnType::VarChar, Constraints::default()),
-            Column::new("c".into(), ColumnType::Char(32), Constraints::default()),
-            Column::new("d".into(), ColumnType::VarChar, Constraints::default()),
-            Column::new(
-                "e".into(),
-                ColumnType::VarChar,
-                Constraints::new(true, false),
-            ),
+            Column::new("a".into(), DataType::BigInt, Constraints::default()),
+            Column::new("b".into(), DataType::VarChar, Constraints::default()),
+            Column::new("c".into(), DataType::Char(32), Constraints::default()),
+            Column::new("d".into(), DataType::VarChar, Constraints::default()),
+            Column::new("e".into(), DataType::VarChar, Constraints::new(true, false)),
         ])
         .unwrap();
         let values = vec![
