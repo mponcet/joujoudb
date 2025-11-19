@@ -4,10 +4,20 @@ use thiserror::Error;
 use zerocopy_derive::*;
 
 #[derive(Copy, Clone)]
-pub enum ColumnType {
+pub enum DataType {
     Char(usize),
     VarChar,
     BigInt,
+}
+
+impl From<DataType> for String {
+    fn from(data_type: DataType) -> Self {
+        match data_type {
+            DataType::Char(n) => format!("CHAR({n}"),
+            DataType::VarChar => "VARCHAR".to_string(),
+            DataType::BigInt => "BIGINT".to_string(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Default, TryFromBytes, IntoBytes, KnownLayout, Immutable)]
@@ -46,17 +56,18 @@ impl Constraints {
     }
 }
 
+#[derive(Clone)]
 pub struct Column {
     pub column_name: String,
-    pub column_type: ColumnType,
+    pub data_type: DataType,
     pub constraints: Constraints,
 }
 
 impl Column {
-    pub fn new(column_name: String, column_type: ColumnType, constraints: Constraints) -> Self {
+    pub fn new(column_name: String, data_type: DataType, constraints: Constraints) -> Self {
         Self {
             column_name,
-            column_type,
+            data_type,
             constraints,
         }
     }
@@ -101,12 +112,12 @@ mod tests {
         let columns = vec![
             Column {
                 column_name: "a".into(),
-                column_type: ColumnType::BigInt,
+                data_type: DataType::BigInt,
                 constraints: Constraints::new(true, false),
             },
             Column {
                 column_name: "b".into(),
-                column_type: ColumnType::Char(32),
+                data_type: DataType::Char(32),
                 constraints: Constraints::new(false, false),
             },
         ];
