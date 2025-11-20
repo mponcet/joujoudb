@@ -24,6 +24,12 @@ impl HeapPageSlotId {
     pub fn set(&mut self, slot_id: u16) {
         self.0.set(slot_id);
     }
+
+    pub fn next(&mut self) {
+        let slot_id = self.0.get();
+        debug_assert!(slot_id < u16::MAX);
+        self.0.set(slot_id + 1);
+    }
 }
 
 // The identifier for a unique entry in a table

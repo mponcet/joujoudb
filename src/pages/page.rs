@@ -38,6 +38,12 @@ impl PageId {
     pub fn set(&mut self, page_id: u32) {
         self.0.set(page_id);
     }
+
+    pub fn next(&mut self) {
+        let page_id = self.0.get();
+        debug_assert!(page_id < u32::MAX);
+        self.0.set(page_id + 1);
+    }
 }
 
 /// the actual data read from/written to disk
