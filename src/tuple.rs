@@ -79,9 +79,11 @@ impl TupleRef {
 #[derive(Error, Debug)]
 pub enum TupleError {
     #[error("tuple size cannot exceed {}", HeapPage::MAX_TUPLE_SIZE)]
-    Size,
+    SizeExceeded,
     #[error("tuple cannot have more than {} columns", Tuple::MAX_COLUMNS)]
     TooManyColumns,
+    #[error("tuple values and table schema mismatch")]
+    SchemaMismatch,
 }
 
 impl Tuple {
@@ -106,7 +108,7 @@ impl Tuple {
         if Self::HEADER_SIZE + values_len <= HeapPage::MAX_TUPLE_SIZE {
             Ok(Tuple { values })
         } else {
-            Err(TupleError::Size)
+            Err(TupleError::SizeExceeded)
         }
     }
 
@@ -125,13 +127,25 @@ impl Tuple {
     /// Validates that this tuple conforms to the given schema.
     ///
     /// Returns `Ok(())` if the tuple is valid, or a `TupleError` if it is not.
-    pub fn validate(&self, schema: &Schema) -> Result<(), TupleError> {
+    pub fn validate_with_schema(&self, schema: &Schema) -> Result<(), TupleError> {
         if self.values.len() != schema.num_columns() {
             return Err(TupleError::TooManyColumns);
         }
 
-        // TODO: additional validation could be added here for type checking, constraints, etc.
-        Ok(())
+        let values_match_schema =
+            self.values
+                .iter()
+                .zip(schema.columns())
+                .all(|(value, column)| match value {
+                    Value::Null => column.constraints.is_nullable(),
+                    value => value.data_type().is_some_and(|v| v == column.data_type),
+                });
+
+        if !values_match_schema {
+            Err(TupleError::SchemaMismatch)
+        } else {
+            Ok(())
+        }
     }
 
     #[cfg(test)]
@@ -208,5 +222,51 @@ mod tests {
         for (lhs, rhs) in tuple.values.iter().zip(values_clone.iter()) {
             assert_eq!(lhs, rhs);
         }
+    }
+
+    #[test]
+    fn validate_tuple_ok() {
+        let schema = Schema::try_new(vec![
+            Column::new("a".into(), DataType::BigInt, Constraints::default()),
+            Column::new("b".into(), DataType::VarChar, Constraints::default()),
+            Column::new("c".into(), DataType::Char(32), Constraints::default()),
+            Column::new("d".into(), DataType::VarChar, Constraints::default()),
+            Column::new("e".into(), DataType::VarChar, Constraints::new(true, false)),
+        ])
+        .unwrap();
+        let values = vec![
+            Value::BigInt(BigInt::new(42)),
+            Value::VarChar(VarChar::new("aaaa".to_string())),
+            Value::Char(Char::new("AAAA".to_string(), Some(32))),
+            Value::VarChar(VarChar::new("bbbbb".to_string())),
+            Value::Null,
+        ];
+        let tuple = Tuple::try_new(values).unwrap();
+        assert!(tuple.validate_with_schema(&schema).is_ok());
+    }
+
+    #[test]
+    fn validate_tuple_nullable() {
+        let schema = Schema::try_new(vec![
+            Column::new("a".into(), DataType::BigInt, Constraints::new(true, false)),
+            Column::new("b".into(), DataType::VarChar, Constraints::new(true, false)),
+            Column::new(
+                "c".into(),
+                DataType::Char(32),
+                Constraints::new(true, false),
+            ),
+            Column::new("d".into(), DataType::VarChar, Constraints::new(true, false)),
+            Column::new("e".into(), DataType::VarChar, Constraints::new(true, false)),
+        ])
+        .unwrap();
+        let values = vec![
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+        ];
+        let tuple = Tuple::try_new(values).unwrap();
+        assert!(tuple.validate_with_schema(&schema).is_ok());
     }
 }

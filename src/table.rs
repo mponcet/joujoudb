@@ -49,7 +49,7 @@ impl<S: StorageBackend + 'static> Table<S> {
     }
 
     pub fn insert(&self, tuple: &Tuple) -> Result<RecordId, TableError> {
-        tuple.validate(&self.schema).map_err(TableError::Tuple)?;
+        self.validate_tuple(tuple)?;
 
         let mut page_ref = self
             .cache
@@ -86,6 +86,15 @@ impl<S: StorageBackend + 'static> Table<S> {
             .map_err(TableError::HeapPage)?;
 
         Ok(())
+    }
+
+    fn validate_tuple(&self, tuple: &Tuple) -> Result<(), TableError> {
+        // check data types and nullable constraints
+        tuple
+            .validate_with_schema(&self.schema)
+            .map_err(TableError::Tuple)
+
+        // TODO: check for column uniqueness
     }
 
     pub fn iter(&self) -> TableIterator<'_, S> {
@@ -255,10 +264,9 @@ mod tests {
     fn contraint_nullable() {
         let table = test_table(false);
 
-        // TODO: should not work
         let tuple = Tuple::try_new(vec![Value::Null]).unwrap();
         let result = table.insert(&tuple);
-        assert!(result.is_ok());
+        assert!(result.is_err());
     }
 
     #[test]
