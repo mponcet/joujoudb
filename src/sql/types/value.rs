@@ -149,7 +149,7 @@ impl Value {
         }
     }
 
-    pub fn header_len(&self) -> usize {
+    pub fn header_size(&self) -> usize {
         match self {
             Value::BigInt(_) => 0,
             Value::Char(_) => 0,
@@ -158,8 +158,7 @@ impl Value {
         }
     }
 
-    #[allow(clippy::len_without_is_empty)]
-    pub fn data_len(&self) -> usize {
+    pub fn data_size(&self) -> usize {
         match self {
             Value::BigInt(_) => std::mem::size_of::<BigInt>(),
             Value::Char(char) => char.0.len(),
