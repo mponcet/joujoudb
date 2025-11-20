@@ -128,14 +128,14 @@ impl<'table, S: StorageBackend + 'static> Iterator for TableIterator<'table, S> 
             let heappage = page_ref.heap_page();
             match heappage.get_tuple(self.slot_id) {
                 Ok(tuple) => {
-                    self.slot_id = HeapPageSlotId::new(self.slot_id.get() + 1);
+                    self.slot_id.next();
                     return Some(tuple.to_owned(&self.table.schema));
                 }
                 Err(HeapPageError::SlotDeleted) => {
-                    self.slot_id = HeapPageSlotId::new(self.slot_id.get() + 1);
+                    self.slot_id.next();
                 }
                 Err(HeapPageError::SlotNotFound) => {
-                    self.page_id = PageId::new(self.page_id.get() + 1);
+                    self.page_id.next();
                     page_ref = self.table.cache.get_page(self.page_id).ok()?;
                     self.slot_id = HeapPageSlotId::new(0);
                 }
