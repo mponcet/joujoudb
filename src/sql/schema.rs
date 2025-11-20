@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use thiserror::Error;
 use zerocopy_derive::*;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum DataType {
     Char(usize),
     VarChar,
@@ -73,6 +73,7 @@ impl Column {
     }
 }
 
+#[derive(Clone)]
 pub struct Schema {
     columns: Vec<Column>,
 }

@@ -168,6 +168,15 @@ impl Value {
         }
     }
 
+    pub fn data_type(&self) -> Option<DataType> {
+        match self {
+            Value::BigInt(_) => Some(DataType::BigInt),
+            Value::Char(s) => Some(DataType::Char(s.0.len())),
+            Value::VarChar(_) => Some(DataType::VarChar),
+            Value::Null => None,
+        }
+    }
+
     pub fn is_null(&self) -> bool {
         matches!(self, Value::Null)
     }
