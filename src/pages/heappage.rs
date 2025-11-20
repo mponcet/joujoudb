@@ -98,17 +98,17 @@ pub struct HeapPage {
 #[repr(C)]
 struct HeapPageSlot {
     offset: U16,
-    len: U16,
+    size: U16,
 }
 
 impl HeapPageSlot {
     const SIZE: usize = std::mem::size_of::<HeapPageSlot>();
 
-    fn new(offset: usize, len: usize) -> Self {
-        assert!(len > 0 && len as u16 <= u16::MAX);
+    fn new(offset: usize, size: usize) -> Self {
+        assert!(size > 0 && size as u16 <= u16::MAX);
         Self {
             offset: U16::new(offset as u16),
-            len: U16::new(len as u16),
+            size: U16::new(size as u16),
         }
     }
 
@@ -116,16 +116,16 @@ impl HeapPageSlot {
         self.offset.get() as usize
     }
 
-    fn len(&self) -> usize {
-        self.len.get() as usize
+    fn size(&self) -> usize {
+        self.size.get() as usize
     }
 
     fn mark_deleted(&mut self) {
-        self.len.set(0)
+        self.size.set(0)
     }
 
     pub fn is_deleted(&self) -> bool {
-        self.len == 0
+        self.size == 0
     }
 }
 
@@ -212,7 +212,7 @@ impl HeapPage {
     // free space for both the slot and the tuple
     #[inline]
     fn has_free_space(&self, tuple: &Tuple) -> bool {
-        self.free_space() >= (HeapPageSlot::SIZE + tuple.len())
+        self.free_space() >= (HeapPageSlot::SIZE + tuple.size())
     }
 
     /// Inserts a tuple into the heap page.
@@ -221,13 +221,13 @@ impl HeapPage {
     pub fn insert_tuple(&mut self, tuple: &Tuple) -> Result<HeapPageSlotId, HeapPageError> {
         if self.has_free_space(tuple) {
             // insert tuple
-            let tuple_len = tuple.len();
-            let offset = self.last_tuple_offset().unwrap_or(Self::DATA_SIZE) - tuple_len;
+            let tuple_size = tuple.size();
+            let offset = self.last_tuple_offset().unwrap_or(Self::DATA_SIZE) - tuple_size;
             tuple.write_bytes_to(&mut self.data[offset..]);
 
             // insert slot
             self.header.num_slots.set(self.header.num_slots.get() + 1);
-            let slot = HeapPageSlot::new(offset, tuple_len);
+            let slot = HeapPageSlot::new(offset, tuple_size);
             let idx = self.last_slot_offset().unwrap();
             slot.write_to(&mut self.data[idx..idx + HeapPageSlot::SIZE])
                 .unwrap();
@@ -255,12 +255,12 @@ impl HeapPage {
     /// Returns a `Result` containing a `Tuple` reference, or a `HeapPageError` if the slot is not found or has been deleted.
     pub fn get_tuple(&self, slot_id: HeapPageSlotId) -> Result<&TupleRef, HeapPageError> {
         let slot = self.get_slot(slot_id).ok_or(HeapPageError::SlotNotFound)?;
-        let (idx, len) = (slot.offset(), slot.len());
+        let (idx, size) = (slot.offset(), slot.size());
 
         if slot.is_deleted() {
             Err(HeapPageError::SlotDeleted)
         } else {
-            Ok(TupleRef::ref_from_bytes(&self.data[idx..idx + len]).unwrap())
+            Ok(TupleRef::ref_from_bytes(&self.data[idx..idx + size]).unwrap())
         }
     }
 }

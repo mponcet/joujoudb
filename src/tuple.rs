@@ -66,8 +66,8 @@ impl TupleRef {
                 values.push(Value::Null);
             } else {
                 let value = Value::from_bytes(&self.values[offset..], column.data_type);
-                offset += value.header_len();
-                offset += value.data_len();
+                offset += value.header_size();
+                offset += value.data_size();
                 values.push(value);
             }
         }
@@ -100,27 +100,26 @@ impl Tuple {
             return Err(TupleError::TooManyColumns);
         }
 
-        let values_len = values
+        let values_size = values
             .iter()
-            .map(|v| v.header_len() + v.data_len())
+            .map(|v| v.header_size() + v.data_size())
             .sum::<usize>();
 
-        if Self::HEADER_SIZE + values_len <= HeapPage::MAX_TUPLE_SIZE {
+        if Self::HEADER_SIZE + values_size <= HeapPage::MAX_TUPLE_SIZE {
             Ok(Tuple { values })
         } else {
             Err(TupleError::SizeExceeded)
         }
     }
 
-    /// Returns the total length of the tuple in bytes, including the header.
+    /// Returns the total size of the tuple in bytes, including the header.
     #[inline]
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
+    pub fn size(&self) -> usize {
         Self::HEADER_SIZE
             + self
                 .values
                 .iter()
-                .map(|v| v.header_len() + v.data_len())
+                .map(|v| v.header_size() + v.data_size())
                 .sum::<usize>()
     }
 
@@ -150,7 +149,7 @@ impl Tuple {
 
     #[cfg(test)]
     fn as_bytes(&self) -> &[u8] {
-        let zero = std::iter::repeat_n(0, self.len());
+        let zero = std::iter::repeat_n(0, self.size());
         let mut v = Vec::from_iter(zero);
         self.write_bytes_to(v.as_mut_slice());
 
@@ -171,7 +170,7 @@ impl Serialize for Tuple {
                 if value.is_null() {
                     bitmap.set_null(i)
                 }
-                len += value.header_len() + value.data_len();
+                len += value.header_size() + value.data_size();
                 (len, bitmap)
             },
         );
@@ -182,7 +181,7 @@ impl Serialize for Tuple {
         for value in self.values.iter() {
             if !value.is_null() {
                 value.write_bytes_to(&mut dst[offset..]);
-                offset += value.header_len() + value.data_len();
+                offset += value.header_size() + value.data_size();
             }
         }
     }
