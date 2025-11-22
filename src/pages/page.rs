@@ -66,8 +66,8 @@ impl Page {
 }
 
 pub struct PageMetadata {
-    pub page_id: PageId,
-    pub storage_id: StorageId,
+    page_id: PageId,
+    storage_id: StorageId,
     dirty: AtomicBool,
     counter: AtomicUsize,
 }
@@ -82,27 +82,33 @@ impl PageMetadata {
         }
     }
 
+    #[inline]
+    pub fn page_id(&self) -> PageId {
+        self.page_id
+    }
+
+    #[inline]
+    pub fn storage_id(&self) -> StorageId {
+        self.storage_id
+    }
+
+    #[inline]
     pub fn is_dirty(&self) -> bool {
         self.dirty.load(Ordering::Relaxed)
     }
 
+    #[inline]
     pub fn set_dirty(&self) {
         self.dirty.store(true, Ordering::Relaxed);
     }
 
+    #[inline]
     pub fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::Relaxed);
     }
 
-    pub fn get_pin_counter(&self) -> usize {
-        self.counter.load(Ordering::Relaxed)
-    }
-
-    pub fn pin(&self) -> usize {
-        self.counter.fetch_add(1, Ordering::Relaxed)
-    }
-
-    pub fn unpin(&self) -> usize {
-        self.counter.fetch_sub(1, Ordering::Relaxed)
+    #[inline]
+    pub fn counter(&self) -> &AtomicUsize {
+        &self.counter
     }
 }

@@ -149,7 +149,7 @@ impl<'page> PageRefMut<'page> {
 
         // SAFETY: The references are valid for the lifetime 'page because we still hold the lock.
         // Don't drop `this` with ManuallyDrop::drop(this), the Drop implementation of PageRef
-        // would call metadata.unpin() and drop the guard.
+        // would decrease the metadata counter and drop the guard.
         let _guard = RwLockWriteGuard::downgrade(unsafe { std::ptr::read(&this._guard) });
         let page = unsafe { &*(this.page as *const Page) };
         let metadata = unsafe { &*(this.metadata as *const PageMetadata) };
@@ -189,7 +189,7 @@ impl DerefMut for PageRefMut<'_> {
 
 impl Drop for PageRef<'_> {
     fn drop(&mut self) {
-        let old_counter = self.metadata.counter.fetch_sub(1, Ordering::Release);
+        let old_counter = self.metadata.counter().fetch_sub(1, Ordering::Release);
         if old_counter != 1 {
             return;
         }
@@ -203,13 +203,13 @@ impl Drop for PageRef<'_> {
 
         self.eviction_policy
             .lock()
-            .set_evictable(self.metadata.storage_id, self.metadata.page_id)
+            .set_evictable(self.metadata.storage_id(), self.metadata.page_id())
     }
 }
 
 impl Drop for PageRefMut<'_> {
     fn drop(&mut self) {
-        let old_counter = self.metadata.counter.fetch_sub(1, Ordering::Release);
+        let old_counter = self.metadata.counter().fetch_sub(1, Ordering::Release);
         if old_counter != 1 {
             return;
         }
@@ -221,7 +221,7 @@ impl Drop for PageRefMut<'_> {
 
         self.eviction_policy
             .lock()
-            .set_evictable(self.metadata.storage_id, self.metadata.page_id);
+            .set_evictable(self.metadata.storage_id(), self.metadata.page_id());
     }
 }
 
@@ -312,7 +312,7 @@ impl MemCache {
         let _guard = latch.read();
         let page = unsafe { self.borrow_page(idx) };
         let metadata = unsafe { self.borrow_page_metadata(idx) };
-        metadata.pin();
+        metadata.counter().fetch_add(1, Ordering::Relaxed);
 
         {
             let mut eviction_policy = self.eviction_policy.lock();
@@ -346,7 +346,7 @@ impl MemCache {
         let _guard = latch.write();
         let page = unsafe { self.borrow_page_mut(idx) };
         let metadata = unsafe { self.borrow_page_metadata_mut(idx) };
-        let old_counter = metadata.pin();
+        let old_counter = metadata.counter().fetch_add(1, Ordering::Relaxed);
         assert_eq!(old_counter, 0);
 
         {
@@ -381,7 +381,7 @@ impl MemCache {
         let page = unsafe { self.borrow_page_mut(idx) };
         let metadata = unsafe { self.borrow_page_metadata_mut(idx) };
         *metadata = PageMetadata::new(storage_id, page_id);
-        let old_counter = metadata.pin();
+        let old_counter = metadata.counter().fetch_add(1, Ordering::Relaxed);
         assert_eq!(old_counter, 0);
 
         {
@@ -416,7 +416,7 @@ impl MemCache {
         let latch = &self.pages_latch[idx].latch;
         let _guard = latch.write();
         let metadata = unsafe { self.borrow_page_metadata(idx) };
-        assert_eq!(metadata.get_pin_counter(), 0);
+        assert_eq!(metadata.counter().load(Ordering::Relaxed), 0);
 
         self.eviction_policy.lock().remove(storage_id, page_id);
         {

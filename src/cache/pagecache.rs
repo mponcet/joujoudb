@@ -193,9 +193,9 @@ impl<S: StorageBackend + 'static> PageCacheInner<S> {
             .get_or_insert_default()
             .entry(storage_id)
             .and_modify(|h| {
-                h.insert(metadata.page_id);
+                h.insert(metadata.page_id());
             })
-            .or_insert(BTreeSet::from([metadata.page_id]));
+            .or_insert(BTreeSet::from([metadata.page_id()]));
     }
 
     fn writeback_dirty_pages(&self) {

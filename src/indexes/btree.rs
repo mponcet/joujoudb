@@ -80,7 +80,7 @@ impl<S: StorageBackend + 'static> BTree<S> {
         let superblock = superblock_ref.btree_superblock_mut();
         let mut root_page_ref = page_cache.new_page().map_err(BTreeError::PageCache)?;
 
-        let root_page_id = root_page_ref.metadata().page_id;
+        let root_page_id = root_page_ref.metadata().page_id();
         let root_page = root_page_ref.btree_leaf_page_mut();
         root_page.init();
         superblock.init(root_page_id);
@@ -153,7 +153,7 @@ impl<S: StorageBackend + 'static> BTree<S> {
             match btree_get_page_type(child_page_ref.page()) {
                 BTreePageType::Inner => parent_page_ref = child_page_ref,
                 BTreePageType::Leaf => {
-                    let child_page_id = child_page_ref.metadata().page_id;
+                    let child_page_id = child_page_ref.metadata().page_id();
                     drop(child_page_ref);
                     return self
                         .page_cache
@@ -199,7 +199,7 @@ impl<S: StorageBackend + 'static> BTree<S> {
         {
             let mut rhs_inner_page_ref =
                 self.page_cache.new_page().map_err(BTreeError::PageCache)?;
-            let rhs_inner_page_id = rhs_inner_page_ref.metadata().page_id;
+            let rhs_inner_page_id = rhs_inner_page_ref.metadata().page_id();
             let rhs_inner_page = rhs_inner_page_ref.btree_inner_page_mut();
             rhs_inner_page.init_header();
             let split_key = split.split(rhs_inner_page, split_key, rhs_page_id);
@@ -226,7 +226,7 @@ impl<S: StorageBackend + 'static> BTree<S> {
             let rhs = rhs_page_ref.btree_leaf_page_mut();
             rhs.init();
             let split_key = split.split(rhs, key, value);
-            let rhs_page_id = rhs_page_ref.metadata().page_id;
+            let rhs_page_id = rhs_page_ref.metadata().page_id();
             lhs.set_next_page_id(rhs_page_id);
 
             self.page_cache.set_page_dirty(lhs_page_ref.metadata());
@@ -276,7 +276,7 @@ impl<S: StorageBackend + 'static> BTree<S> {
         if let Some((split_key, rhs_page_id)) = result {
             let mut new_root_page_ref =
                 self.page_cache.new_page().map_err(BTreeError::PageCache)?;
-            let new_root_page_id = new_root_page_ref.metadata().page_id;
+            let new_root_page_id = new_root_page_ref.metadata().page_id();
             let new_root_page = new_root_page_ref.btree_inner_page_mut();
             new_root_page.init(split_key, root_page_id, rhs_page_id);
             self.page_cache.set_page_dirty(new_root_page_ref.metadata());
@@ -396,7 +396,7 @@ mod tests {
             let mut new_page_ids = vec![];
             for page_id in page_ids {
                 let page_ref = btree.page_cache.get_page(page_id).unwrap();
-                let page_id = page_ref.metadata().page_id;
+                let page_id = page_ref.metadata().page_id();
                 match btree_get_page_type(page_ref.page()) {
                     BTreePageType::Inner => {
                         let inner_page = page_ref.btree_inner_page();
