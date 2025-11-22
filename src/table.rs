@@ -157,6 +157,8 @@ mod tests {
     use crate::table::Table;
     use crate::tuple::Tuple;
 
+    const NR_ROWS: usize = 10000;
+
     fn test_table(fill: bool) -> Table<FileStorage> {
         let storage_path = NamedTempFile::new().unwrap();
         let storage = FileStorage::create(storage_path).unwrap();
@@ -170,8 +172,8 @@ mod tests {
 
         let table = Table::try_new("test_tbl", &schema, cache).unwrap();
         if fill {
-            for id in 0..10000 {
-                let tuple = Tuple::try_new(vec![Value::BigInt(BigInt::new(id))]).unwrap();
+            for id in 0..NR_ROWS {
+                let tuple = Tuple::try_new(vec![Value::BigInt(BigInt::new(id as i64))]).unwrap();
                 table.insert(&tuple).unwrap();
             }
         }
@@ -284,7 +286,7 @@ mod tests {
     #[test]
     fn iterator() {
         let table = test_table(true);
-        assert_eq!(table.iter().count(), 10000);
+        assert_eq!(table.iter().count(), NR_ROWS);
         assert!(
             table
                 .iter()
