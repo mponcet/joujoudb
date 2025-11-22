@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
+use crate::storage::{FileStorage, StorageError};
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DatabaseName(String);
 
@@ -22,7 +24,13 @@ impl TryFrom<&str> for DatabaseName {
 }
 
 impl DatabaseName {
-    fn as_str(&self) -> &str {
+    const fn from(name: String) -> Self {
+        Self(name)
+    }
+}
+
+impl DatabaseName {
+    pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
 }
@@ -44,7 +52,7 @@ impl TryFrom<&str> for TableName {
 }
 
 impl TableName {
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
 }
@@ -93,6 +101,10 @@ impl TableFile {
 
     pub fn path(&self) -> &Path {
         self.path.as_path()
+    }
+
+    pub fn open(&self) -> std::result::Result<FileStorage, StorageError> {
+        FileStorage::open(self.path())
     }
 }
 

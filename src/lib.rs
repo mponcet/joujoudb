@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod catalog;
 pub mod config;
 pub mod indexes;
 pub mod pages;
