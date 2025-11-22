@@ -59,7 +59,7 @@ impl<S: StorageBackend + 'static> Table<S> {
         match heappage.insert_tuple(tuple) {
             Ok(slot_id) => {
                 let metadata = page_ref.metadata();
-                metadata.set_dirty();
+                self.cache.set_page_dirty(metadata);
                 Ok(RecordId::new(metadata.page_id, slot_id))
             }
             Err(HeapPageError::NoFreeSpace) => {
@@ -67,7 +67,7 @@ impl<S: StorageBackend + 'static> Table<S> {
                 let heappage = page_ref.heap_page_mut();
                 let slot_id = heappage.insert_tuple(tuple).map_err(TableError::HeapPage)?;
                 let metadata = page_ref.metadata();
-                metadata.set_dirty();
+                self.cache.set_page_dirty(metadata);
                 Ok(RecordId::new(metadata.page_id, slot_id))
             }
             Err(e) => Err(TableError::from(e)),
