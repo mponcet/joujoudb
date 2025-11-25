@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use thiserror::Error;
-use zerocopy_derive::*;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum DataType {
@@ -20,7 +19,7 @@ impl From<DataType> for String {
     }
 }
 
-#[derive(Copy, Clone, Default, TryFromBytes, IntoBytes, KnownLayout, Immutable)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct Constraints(u8);
 
