@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use zerocopy::{
     byteorder::little_endian::{F64, I64, U16},
     *,
@@ -148,6 +150,7 @@ impl PartialEq for Value {
             (Self::Float(lhs), Self::Float(rhs)) => {
                 // NOTE: most dbms consider 'NaN' == 'NaN' to be true.
                 // Comparision semantics differ from the IEEE 754 standard.
+                // Tested on PostgreSQL with `NUMERIC` type.
                 if lhs.is_nan() && rhs.is_nan()
                     || (lhs.is_infinite() && rhs.is_infinite() && lhs.signum() == rhs.signum())
                 {
@@ -163,7 +166,28 @@ impl PartialEq for Value {
     }
 }
 
-impl Eq for Value {}
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Self::Boolean(lhs), Self::Boolean(rhs)) => lhs.partial_cmp(rhs),
+            (Self::Integer(lhs), Self::Integer(rhs)) => lhs.partial_cmp(rhs),
+            (Self::Float(lhs), Self::Float(rhs)) => {
+                // NOTE: more database weird behaviour.
+                // Tested on PostgreSQL with `NUMERIC` type.
+                if lhs.is_infinite() && rhs.is_nan() {
+                    Some(Ordering::Less)
+                } else if lhs.is_nan() && rhs.is_infinite() {
+                    Some(Ordering::Greater)
+                } else {
+                    lhs.partial_cmp(rhs)
+                }
+            }
+            (Self::VarChar(lhs), Self::VarChar(rhs)) => lhs.partial_cmp(rhs),
+            (Self::Null, Self::Null) => None,
+            _ => None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -175,5 +199,13 @@ mod tests {
         let f2 = Value::Float(f64::NAN);
 
         assert_eq!(f1, f2);
+    }
+
+    #[test]
+    fn float_partial_ord() {
+        assert!(Value::Float(f64::INFINITY) < Value::Float(f64::NAN));
+        assert!(Value::Float(f64::NAN) > Value::Float(f64::INFINITY));
+        assert!(Value::Float(f64::NEG_INFINITY) < Value::Float(f64::NAN));
+        assert!(Value::Float(f64::NAN) > Value::Float(f64::NEG_INFINITY));
     }
 }
