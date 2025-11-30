@@ -280,33 +280,27 @@ impl<'a> From<&'a mut Page> for &'a mut HeapPage {
 #[cfg(test)]
 mod tests {
     use crate::sql::schema::{Column, Constraints, DataType, Schema};
-    use crate::sql::types::{BigInt, Char, Value, VarChar};
+    use crate::sql::types::Value;
 
     use super::*;
 
     fn test_schema() -> Schema {
         Schema::try_new(vec![
-            Column::new("a".into(), DataType::BigInt, Constraints::default()),
+            Column::new("a".into(), DataType::Integer, Constraints::default()),
             Column::new("b".into(), DataType::VarChar, Constraints::default()),
-            Column::new("c".into(), DataType::Char(32), Constraints::default()),
         ])
         .unwrap()
     }
 
-    fn test_values(varchar_len: usize, char_len: usize) -> Vec<Value> {
+    fn test_values(varchar_len: usize) -> Vec<Value> {
         let varchar = String::from_iter(std::iter::repeat_n('v', varchar_len));
-        let char = String::from_iter(std::iter::repeat_n('c', char_len));
-        vec![
-            Value::BigInt(BigInt::new(42)),
-            Value::VarChar(VarChar::new(varchar)),
-            Value::Char(Char::new(char, Some(32))),
-        ]
+        vec![Value::Integer(42), Value::VarChar(varchar)]
     }
 
     #[test]
     fn page_should_not_overflow() {
         let mut page = HeapPage::new();
-        let values = test_values(128, 32);
+        let values = test_values(128);
         let tuple = Tuple::try_new(values).unwrap();
 
         for _ in 0..40 {
@@ -322,14 +316,14 @@ mod tests {
         let mut page = HeapPage::new();
 
         assert_eq!(page.free_space(), HeapPage::DATA_SIZE);
-        let values = vec![Value::Char(Char::new("cc".to_string(), Some(2)))];
+        let values = vec![Value::Integer(0)];
         let tuple = Tuple::try_new(values).unwrap();
         // slot and tuple (with header) size: 16
-        for _ in 0..HeapPage::DATA_SIZE / 16 {
+        for _ in 0..HeapPage::DATA_SIZE / 22 {
             let _ = page.insert_tuple(&tuple);
         }
 
-        assert_eq!(page.free_space(), HeapPage::DATA_SIZE % 16);
+        assert_eq!(page.free_space(), HeapPage::DATA_SIZE % 22);
     }
 
     #[test]
@@ -337,8 +331,8 @@ mod tests {
         let mut page = HeapPage::new();
 
         let schema = test_schema();
-        let values = test_values(128, 32);
-        let values2 = test_values(64, 16);
+        let values = test_values(128);
+        let values2 = test_values(64);
         let values_clone = values.clone();
         let values2_clone = values2.clone();
         let tuple = Tuple::try_new(values).unwrap();

@@ -164,17 +164,17 @@ impl Tuple {
 
 impl Serialize for Tuple {
     fn write_bytes_to(&self, dst: &mut [u8]) {
-        let (len, null_bitmap) = self.values.iter().enumerate().fold(
+        let (header_len, null_bitmap) = self.values.iter().enumerate().fold(
             (0, NullBitmap::default()),
-            |(mut len, mut bitmap), (i, value)| {
+            |(mut header_len, mut bitmap), (i, value)| {
                 if value.is_null() {
                     bitmap.set_null(i)
                 }
-                len += value.header_size() + value.data_size();
-                (len, bitmap)
+                header_len += value.header_size() + value.data_size();
+                (header_len, bitmap)
             },
         );
-        let header = TupleHeader::new(len, null_bitmap);
+        let header = TupleHeader::new(header_len, null_bitmap);
         let mut offset = Self::HEADER_SIZE;
         header.write_to(&mut dst[..offset]).unwrap();
 
@@ -190,25 +190,23 @@ impl Serialize for Tuple {
 #[cfg(test)]
 mod tests {
     use crate::sql::schema::{Column, Constraints, DataType};
-    use crate::sql::types::{BigInt, Char, Value, VarChar};
+    use crate::sql::types::Value;
 
     use super::*;
 
     #[test]
     fn read_after_write() {
         let schema = Schema::try_new(vec![
-            Column::new("a".into(), DataType::BigInt, Constraints::default()),
+            Column::new("a".into(), DataType::Integer, Constraints::default()),
             Column::new("b".into(), DataType::VarChar, Constraints::default()),
-            Column::new("c".into(), DataType::Char(32), Constraints::default()),
-            Column::new("d".into(), DataType::VarChar, Constraints::default()),
-            Column::new("e".into(), DataType::VarChar, Constraints::new(true, false)),
+            Column::new("c".into(), DataType::Boolean, Constraints::default()),
+            Column::new("d".into(), DataType::VarChar, Constraints::new(true, false)),
         ])
         .unwrap();
         let values = vec![
-            Value::BigInt(BigInt::new(42)),
-            Value::VarChar(VarChar::new("aaaa".to_string())),
-            Value::Char(Char::new("AAAA".to_string(), Some(32))),
-            Value::VarChar(VarChar::new("bbbbb".to_string())),
+            Value::Integer(42),
+            Value::VarChar("bbbbb".to_string()),
+            Value::Boolean(true),
             Value::Null,
         ];
         let values_clone = values.clone();
@@ -226,18 +224,16 @@ mod tests {
     #[test]
     fn validate_tuple_ok() {
         let schema = Schema::try_new(vec![
-            Column::new("a".into(), DataType::BigInt, Constraints::default()),
+            Column::new("a".into(), DataType::Integer, Constraints::default()),
             Column::new("b".into(), DataType::VarChar, Constraints::default()),
-            Column::new("c".into(), DataType::Char(32), Constraints::default()),
             Column::new("d".into(), DataType::VarChar, Constraints::default()),
             Column::new("e".into(), DataType::VarChar, Constraints::new(true, false)),
         ])
         .unwrap();
         let values = vec![
-            Value::BigInt(BigInt::new(42)),
-            Value::VarChar(VarChar::new("aaaa".to_string())),
-            Value::Char(Char::new("AAAA".to_string(), Some(32))),
-            Value::VarChar(VarChar::new("bbbbb".to_string())),
+            Value::Integer(42),
+            Value::VarChar("aaaa".to_string()),
+            Value::VarChar("bbbbb".to_string()),
             Value::Null,
         ];
         let tuple = Tuple::try_new(values).unwrap();
@@ -247,24 +243,13 @@ mod tests {
     #[test]
     fn validate_tuple_nullable() {
         let schema = Schema::try_new(vec![
-            Column::new("a".into(), DataType::BigInt, Constraints::new(true, false)),
+            Column::new("a".into(), DataType::Integer, Constraints::new(true, false)),
             Column::new("b".into(), DataType::VarChar, Constraints::new(true, false)),
-            Column::new(
-                "c".into(),
-                DataType::Char(32),
-                Constraints::new(true, false),
-            ),
+            Column::new("c".into(), DataType::VarChar, Constraints::new(true, false)),
             Column::new("d".into(), DataType::VarChar, Constraints::new(true, false)),
-            Column::new("e".into(), DataType::VarChar, Constraints::new(true, false)),
         ])
         .unwrap();
-        let values = vec![
-            Value::Null,
-            Value::Null,
-            Value::Null,
-            Value::Null,
-            Value::Null,
-        ];
+        let values = vec![Value::Null, Value::Null, Value::Null, Value::Null];
         let tuple = Tuple::try_new(values).unwrap();
         assert!(tuple.validate_with_schema(&schema).is_ok());
     }

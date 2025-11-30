@@ -4,7 +4,7 @@ use zerocopy::{
 };
 use zerocopy_derive::*;
 
-use crate::serialize::{Deserialize, Serialize};
+use crate::serialize::Serialize;
 use crate::sql::schema::DataType;
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
@@ -29,96 +29,6 @@ impl ValueHeader {
     }
 }
 
-#[derive(Clone, Copy, Debug, FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
-#[repr(C)]
-pub struct BigInt(I64);
-
-impl BigInt {
-    pub fn new(i: i64) -> Self {
-        Self(I64::new(i))
-    }
-
-    pub fn get(&self) -> i64 {
-        self.0.get()
-    }
-}
-
-impl Serialize for BigInt {
-    fn write_bytes_to(&self, dst: &mut [u8]) {
-        zerocopy::IntoBytes::write_to(self, &mut dst[..8]).unwrap();
-    }
-}
-
-impl Deserialize for BigInt {
-    fn from_bytes(source: &[u8]) -> Self {
-        *BigInt::ref_from_bytes(&source[0..8]).unwrap()
-    }
-}
-
-// Char is a fixed-length string, padded with spaces.
-#[derive(Clone, Debug)]
-pub struct Char(String);
-
-impl Char {
-    pub fn new(mut s: String, n: Option<usize>) -> Self {
-        if let Some(n) = n {
-            let num_spaces = n - s.len();
-            let spaces = std::iter::repeat_n(' ', num_spaces);
-            s.extend(spaces);
-        }
-        Self(s)
-    }
-
-    pub fn get(&self) -> &str {
-        self.0.as_str().trim_end_matches(' ')
-    }
-}
-impl Serialize for Char {
-    fn write_bytes_to(&self, dst: &mut [u8]) {
-        let src = self.0.as_bytes();
-        src.write_to(&mut dst[..src.len()]).unwrap()
-    }
-}
-
-impl Deserialize for Char {
-    fn from_bytes(source: &[u8]) -> Self {
-        let char = str::from_utf8(source).unwrap().to_string();
-        Char::new(char, None)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct VarChar(String);
-
-impl VarChar {
-    pub fn new(s: String) -> Self {
-        Self(s)
-    }
-
-    pub fn get(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-impl Serialize for VarChar {
-    fn write_bytes_to(&self, dst: &mut [u8]) {
-        let header = ValueHeader::new(self.0.len());
-        let offset = ValueHeader::SIZE;
-        header.write_to(&mut dst[..offset]).unwrap();
-        let src = self.0.as_bytes();
-        src.write_to(&mut dst[offset..offset + src.len()]).unwrap();
-    }
-}
-
-impl Deserialize for VarChar {
-    fn from_bytes(source: &[u8]) -> Self {
-        let varchar = VarCharRef::ref_from_bytes(source).unwrap();
-        let split = varchar.split_at(varchar.header.len() as usize).unwrap();
-        let (varchar, _) = split.via_immutable();
-        varchar.to_owned()
-    }
-}
-
 #[derive(SplitAt, FromBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
 pub struct VarCharRef {
@@ -127,32 +37,44 @@ pub struct VarCharRef {
 }
 
 impl VarCharRef {
-    fn to_owned(&self) -> VarChar {
-        VarChar(String::from_utf8(self.data.to_vec()).unwrap())
+    fn to_owned(&self) -> String {
+        String::from_utf8(self.data.to_vec()).unwrap()
     }
 }
 
 #[derive(Clone, Debug)]
 pub enum Value {
-    BigInt(BigInt),
-    Char(Char),
-    VarChar(VarChar),
+    Integer(i64),
+    VarChar(String),
+    Boolean(bool),
     Null,
 }
 
 impl Value {
     pub fn from_bytes(bytes: &[u8], data_type: DataType) -> Self {
         match data_type {
-            DataType::Char(n) => Self::Char(Deserialize::from_bytes(&bytes[..n])),
-            DataType::VarChar => Self::VarChar(Deserialize::from_bytes(bytes)),
-            DataType::BigInt => Self::BigInt(Deserialize::from_bytes(bytes)),
+            DataType::Boolean => {
+                let b = bytes[0] == 0x01;
+                Self::Boolean(b)
+            }
+            DataType::Integer => {
+                let i = I64::ref_from_bytes(&bytes[0..8]).unwrap().get();
+                Self::Integer(i)
+            }
+            DataType::VarChar => {
+                let varchar = VarCharRef::ref_from_bytes(bytes).unwrap();
+                let split = varchar.split_at(varchar.header.len() as usize).unwrap();
+                let (varchar, _) = split.via_immutable();
+                let varchar = varchar.to_owned();
+                Self::VarChar(varchar)
+            }
         }
     }
 
     pub fn header_size(&self) -> usize {
         match self {
-            Value::BigInt(_) => 0,
-            Value::Char(_) => 0,
+            Value::Boolean(_) => 0,
+            Value::Integer(_) => 0,
             Value::VarChar(_) => ValueHeader::SIZE,
             Value::Null => 0,
         }
@@ -160,17 +82,17 @@ impl Value {
 
     pub fn data_size(&self) -> usize {
         match self {
-            Value::BigInt(_) => std::mem::size_of::<BigInt>(),
-            Value::Char(char) => char.0.len(),
-            Value::VarChar(varchar) => varchar.0.len(),
+            Value::Boolean(_) => std::mem::size_of::<u8>(),
+            Value::Integer(_) => std::mem::size_of::<i64>(),
+            Value::VarChar(varchar) => varchar.len(),
             Value::Null => 0,
         }
     }
 
     pub fn data_type(&self) -> Option<DataType> {
         match self {
-            Value::BigInt(_) => Some(DataType::BigInt),
-            Value::Char(s) => Some(DataType::Char(s.0.len())),
+            Value::Boolean(_) => Some(DataType::Boolean),
+            Value::Integer(_) => Some(DataType::Integer),
             Value::VarChar(_) => Some(DataType::VarChar),
             Value::Null => None,
         }
@@ -184,9 +106,23 @@ impl Value {
 impl Serialize for Value {
     fn write_bytes_to(&self, dst: &mut [u8]) {
         match self {
-            Value::BigInt(bigint) => bigint.write_bytes_to(dst),
-            Value::Char(char) => char.write_bytes_to(dst),
-            Value::VarChar(varchar) => varchar.write_bytes_to(dst),
+            Value::Boolean(b) => {
+                // An object with the boolean type has a size and alignment of 1 each.
+                // The value false has the bit pattern 0x00 and the value true has the bit pattern 0x01.
+                // https://doc.rust-lang.org/reference/types/boolean.html
+                dst[0] = *b as u8;
+            }
+            Value::Integer(i) => {
+                let i = I64::new(*i);
+                i.write_to(&mut dst[0..8]).unwrap();
+            }
+            Value::VarChar(s) => {
+                let header = ValueHeader::new(s.len());
+                let offset = ValueHeader::SIZE;
+                header.write_to(&mut dst[..offset]).unwrap();
+                let src = s.as_bytes();
+                src.write_to(&mut dst[offset..offset + src.len()]).unwrap();
+            }
             Value::Null => unreachable!(),
         }
     }
@@ -195,9 +131,9 @@ impl Serialize for Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::BigInt(lhs), Self::BigInt(rhs)) => lhs.get() == rhs.get(),
-            (Self::Char(lhs), Self::Char(rhs)) => lhs.get() == rhs.get(),
-            (Self::VarChar(lhs), Self::VarChar(rhs)) => lhs.get() == rhs.get(),
+            (Self::Boolean(lhs), Self::Boolean(rhs)) => lhs.eq(rhs),
+            (Self::Integer(lhs), Self::Integer(rhs)) => lhs.eq(rhs),
+            (Self::VarChar(lhs), Self::VarChar(rhs)) => lhs.eq(rhs),
             (Self::Null, Self::Null) => true,
             _ => false,
         }

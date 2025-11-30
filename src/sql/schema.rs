@@ -4,17 +4,17 @@ use thiserror::Error;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum DataType {
-    Char(usize),
+    Boolean,
+    Integer,
     VarChar,
-    BigInt,
 }
 
 impl From<DataType> for String {
     fn from(data_type: DataType) -> Self {
         match data_type {
-            DataType::Char(n) => format!("CHAR({n}"),
+            DataType::Boolean => "BOOLEAN".to_string(),
+            DataType::Integer => "INTEGER".to_string(),
             DataType::VarChar => "VARCHAR".to_string(),
-            DataType::BigInt => "BIGINT".to_string(),
         }
     }
 }
@@ -112,12 +112,12 @@ mod tests {
         let columns = vec![
             Column {
                 column_name: "a".into(),
-                data_type: DataType::BigInt,
+                data_type: DataType::Integer,
                 constraints: Constraints::new(true, false),
             },
             Column {
                 column_name: "b".into(),
-                data_type: DataType::Char(32),
+                data_type: DataType::VarChar,
                 constraints: Constraints::new(false, false),
             },
         ];

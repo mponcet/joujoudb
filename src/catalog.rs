@@ -1,7 +1,7 @@
 use crate::cache::GLOBAL_PAGE_CACHE;
 use crate::config::CONFIG;
 use crate::sql::schema::{Column, Constraints, DataType, Schema};
-use crate::sql::types::{BigInt, Char, Value, VarChar};
+use crate::sql::types::Value;
 use crate::storage::{DatabaseName, DatabaseRootDirectory, FileStorage, StorageBackend, TableName};
 use crate::table::Table;
 use crate::tuple::Tuple;
@@ -36,7 +36,7 @@ static INFORMATION_SCHEMA_TABLES: LazyLock<Schema> = LazyLock::new(|| {
         // TABLE_TYPE: table or index.
         Column {
             column_name: "TABLE_TYPE".into(),
-            data_type: DataType::Char(5),
+            data_type: DataType::VarChar,
             constraints: Constraints::new(false, false),
         },
         // TABLE_NAME: the name of the table.
@@ -48,7 +48,7 @@ static INFORMATION_SCHEMA_TABLES: LazyLock<Schema> = LazyLock::new(|| {
         // TABLE_ROWS: the number of rows.
         Column {
             column_name: "TABLE_ROWS".into(),
-            data_type: DataType::BigInt,
+            data_type: DataType::Integer,
             constraints: Constraints::new(false, false),
         },
     ])
@@ -78,7 +78,7 @@ static INFORMATION_SCHEMA_COLUMNS: LazyLock<Schema> = LazyLock::new(|| {
         // ORDINAL_POSITION: the position of the column within the table.
         Column {
             column_name: "ORDINAL_POSITION".into(),
-            data_type: DataType::BigInt,
+            data_type: DataType::Integer,
             constraints: Constraints::new(false, false),
         },
         // COLUMN_DEFAULT: the default value of the column.
@@ -90,7 +90,7 @@ static INFORMATION_SCHEMA_COLUMNS: LazyLock<Schema> = LazyLock::new(|| {
         // IS_NULLABLE: the column nullability.
         Column {
             column_name: "IS_NULLABLE".into(),
-            data_type: DataType::Char(3),
+            data_type: DataType::VarChar,
             constraints: Constraints::new(false, false),
         },
         // DATA_TYPE: the data type.
@@ -182,10 +182,10 @@ impl<S: StorageBackend + 'static> Catalog<S> {
             .map_err(|_| CatalogError::CreateTable)?;
 
         let tuple = Tuple::try_new(vec![
-            Value::VarChar(VarChar::new(db_name.as_str().to_string())),
-            Value::Char(Char::new("table".to_string(), Some(5))),
-            Value::VarChar(VarChar::new(table_name.as_str().to_string())),
-            Value::BigInt(BigInt::new(schema.num_columns() as i64)),
+            Value::VarChar(db_name.as_str().to_string()),
+            Value::VarChar("table".to_string()),
+            Value::VarChar(table_name.as_str().to_string()),
+            Value::Integer(schema.num_columns() as i64),
         ])
         .map_err(|_| CatalogError::CreateTable)?;
 
@@ -200,12 +200,12 @@ impl<S: StorageBackend + 'static> Catalog<S> {
                 "NO"
             };
             let tuple = Tuple::try_new(vec![
-                Value::VarChar(VarChar::new(db_name.as_str().to_string())),
-                Value::VarChar(VarChar::new(table_name.as_str().to_string())),
-                Value::VarChar(VarChar::new(column.column_name.clone())),
-                Value::BigInt(BigInt::new(ordinal_position as i64)),
-                Value::Char(Char::new(is_nullable.to_string(), Some(3))),
-                Value::VarChar(VarChar::new(column.data_type.into())),
+                Value::VarChar(db_name.as_str().to_string()),
+                Value::VarChar(table_name.as_str().to_string()),
+                Value::VarChar(column.column_name.clone()),
+                Value::Integer(ordinal_position as i64),
+                Value::VarChar(is_nullable.to_string()),
+                Value::VarChar(column.data_type.into()),
             ])
             .map_err(|_| CatalogError::CreateTable)?;
 
@@ -237,7 +237,7 @@ mod tests {
         let schema = Schema::try_new(vec![
             Column::new(
                 "id".into(),
-                DataType::BigInt,
+                DataType::Integer,
                 Constraints::new(false, false),
             ),
             Column::new(

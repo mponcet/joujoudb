@@ -152,7 +152,7 @@ mod tests {
     use crate::cache::GLOBAL_PAGE_CACHE;
     use crate::pages::{HeapPageSlotId, PageId, RecordId};
     use crate::sql::schema::{Column, Constraints, DataType, Schema};
-    use crate::sql::types::{BigInt, Value, VarChar};
+    use crate::sql::types::Value;
     use crate::storage::FileStorage;
     use crate::table::Table;
     use crate::tuple::Tuple;
@@ -165,7 +165,7 @@ mod tests {
         let cache = GLOBAL_PAGE_CACHE.cache_storage(storage);
         let schema = Schema::try_new(vec![Column::new(
             "id".into(),
-            DataType::BigInt,
+            DataType::Integer,
             Constraints::new(false, false),
         )])
         .unwrap();
@@ -173,7 +173,7 @@ mod tests {
         let table = Table::try_new("test_tbl", &schema, cache).unwrap();
         if fill {
             for id in 0..NR_ROWS {
-                let tuple = Tuple::try_new(vec![Value::BigInt(BigInt::new(id as i64))]).unwrap();
+                let tuple = Tuple::try_new(vec![Value::Integer(id as i64)]).unwrap();
                 table.insert(&tuple).unwrap();
             }
         }
@@ -184,11 +184,11 @@ mod tests {
     fn insert_and_get() {
         let table = test_table(false);
 
-        let tuple = Tuple::try_new(vec![Value::BigInt(BigInt::new(42))]).unwrap();
+        let tuple = Tuple::try_new(vec![Value::Integer(42)]).unwrap();
         let record_id = table.insert(&tuple).unwrap();
 
         let retrieved_tuple = table.get(record_id).unwrap();
-        assert_eq!(retrieved_tuple.values()[0], Value::BigInt(BigInt::new(42)));
+        assert_eq!(retrieved_tuple.values()[0], Value::Integer(42));
     }
 
     #[test]
@@ -199,7 +199,7 @@ mod tests {
         let schema = Schema::try_new(vec![
             Column::new(
                 "id".into(),
-                DataType::BigInt,
+                DataType::Integer,
                 Constraints::new(false, false),
             ),
             Column::new(
@@ -211,18 +211,15 @@ mod tests {
         .unwrap();
         let table = Table::try_new("test_tbl", &schema, cache).unwrap();
 
-        let tuple = Tuple::try_new(vec![
-            Value::BigInt(BigInt::new(42)),
-            Value::VarChar(VarChar::new("test".to_string())),
-        ])
-        .unwrap();
+        let tuple =
+            Tuple::try_new(vec![Value::Integer(42), Value::VarChar("test".to_string())]).unwrap();
         let record_id = table.insert(&tuple).unwrap();
 
         let retrieved_tuple = table.get(record_id).unwrap();
-        assert_eq!(retrieved_tuple.values()[0], Value::BigInt(BigInt::new(42)));
+        assert_eq!(retrieved_tuple.values()[0], Value::Integer(42));
         assert_eq!(
             retrieved_tuple.values()[1],
-            Value::VarChar(VarChar::new("test".to_string()))
+            Value::VarChar("test".to_string())
         );
     }
 
@@ -231,11 +228,7 @@ mod tests {
         let table = test_table(false);
 
         // Try to insert a tuple with wrong schema (too many values)
-        let tuple = Tuple::try_new(vec![
-            Value::BigInt(BigInt::new(42)),
-            Value::BigInt(BigInt::new(43)),
-        ])
-        .unwrap();
+        let tuple = Tuple::try_new(vec![Value::Integer(42), Value::Integer(43)]).unwrap();
         let result = table.insert(&tuple);
         assert!(result.is_err());
     }
@@ -244,7 +237,7 @@ mod tests {
     fn delete() {
         let table = test_table(false);
 
-        let tuple = Tuple::try_new(vec![Value::BigInt(BigInt::new(42))]).unwrap();
+        let tuple = Tuple::try_new(vec![Value::Integer(42)]).unwrap();
         let record_id = table.insert(&tuple).unwrap();
 
         table.delete(record_id).unwrap();
@@ -276,7 +269,7 @@ mod tests {
         // TODO: this test would require a unique constraint implementation
         let table = test_table(false);
 
-        let tuple = Tuple::try_new(vec![Value::BigInt(BigInt::new(42))]).unwrap();
+        let tuple = Tuple::try_new(vec![Value::Integer(42)]).unwrap();
         table.insert(&tuple).unwrap();
 
         let _result = table.insert(&tuple);
@@ -291,7 +284,7 @@ mod tests {
             table
                 .iter()
                 .enumerate()
-                .all(|(id, tuple)| { tuple.values()[0] == Value::BigInt(BigInt::new(id as i64)) })
+                .all(|(id, tuple)| { tuple.values()[0] == Value::Integer(id as i64) })
         );
     }
 
@@ -307,7 +300,7 @@ mod tests {
 
         let record_ids: Vec<_> = (0..5i64)
             .map(|i| {
-                let tuple = Tuple::try_new(vec![Value::BigInt(BigInt::new(i))]).unwrap();
+                let tuple = Tuple::try_new(vec![Value::Integer(i)]).unwrap();
                 table.insert(&tuple).unwrap()
             })
             .collect();
@@ -318,10 +311,10 @@ mod tests {
         let values: Vec<i64> = table
             .iter()
             .map(|tuple| {
-                if let Value::BigInt(bigint) = tuple.values()[0] {
-                    bigint.get()
+                if let Value::Integer(integer) = tuple.values()[0] {
+                    integer
                 } else {
-                    panic!("Expected BigInt value")
+                    panic!("Expected Integer value")
                 }
             })
             .collect();
