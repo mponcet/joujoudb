@@ -574,7 +574,7 @@ mod tests {
         assert!(btree.search(Key::new(999)).is_some());
         assert_eq!(btree.iter(Key::new(0)).unwrap().count(), 1000);
         let keys = btree.iter(Key::new(0)).unwrap().map(|(key, _)| key);
-        assert!(keys.eq((0..1000).map(|k| Key::new(k))));
+        assert!(keys.eq((0..1000).map(Key::new)));
     }
 
     #[test]
