@@ -205,7 +205,7 @@ impl<S: StorageBackend + 'static> Catalog<S> {
                 Value::VarChar(column.column_name.clone()),
                 Value::Integer(ordinal_position as i64),
                 Value::VarChar(is_nullable.to_string()),
-                Value::VarChar(column.data_type.into()),
+                Value::VarChar(format!("{}", column.data_type)),
             ])
             .map_err(|_| CatalogError::CreateTable)?;
 

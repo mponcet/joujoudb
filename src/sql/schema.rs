@@ -10,14 +10,15 @@ pub enum DataType {
     VarChar,
 }
 
-impl From<DataType> for String {
-    fn from(data_type: DataType) -> Self {
-        match data_type {
-            DataType::Boolean => "BOOLEAN".to_string(),
-            DataType::Integer => "INTEGER".to_string(),
-            DataType::Float => "FLOAT".to_string(),
-            DataType::VarChar => "VARCHAR".to_string(),
-        }
+impl std::fmt::Display for DataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            DataType::Boolean => "BOOLEAN",
+            DataType::Integer => "INTEGER",
+            DataType::Float => "FLOAT",
+            DataType::VarChar => "VARCHAR",
+        };
+        write!(f, "{s}")
     }
 }
 
