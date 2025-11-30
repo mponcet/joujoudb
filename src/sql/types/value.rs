@@ -1,5 +1,5 @@
 use zerocopy::{
-    byteorder::little_endian::{I64, U16},
+    byteorder::little_endian::{F64, I64, U16},
     *,
 };
 use zerocopy_derive::*;
@@ -44,9 +44,10 @@ impl VarCharRef {
 
 #[derive(Clone, Debug)]
 pub enum Value {
-    Integer(i64),
-    VarChar(String),
     Boolean(bool),
+    Integer(i64),
+    Float(f64),
+    VarChar(String),
     Null,
 }
 
@@ -60,6 +61,10 @@ impl Value {
             DataType::Integer => {
                 let i = I64::ref_from_bytes(&bytes[0..8]).unwrap().get();
                 Self::Integer(i)
+            }
+            DataType::Float => {
+                let f = F64::ref_from_bytes(&bytes[0..8]).unwrap().get();
+                Self::Float(f)
             }
             DataType::VarChar => {
                 let varchar = VarCharRef::ref_from_bytes(bytes).unwrap();
@@ -75,6 +80,7 @@ impl Value {
         match self {
             Value::Boolean(_) => 0,
             Value::Integer(_) => 0,
+            Value::Float(_) => 0,
             Value::VarChar(_) => ValueHeader::SIZE,
             Value::Null => 0,
         }
@@ -84,6 +90,7 @@ impl Value {
         match self {
             Value::Boolean(_) => std::mem::size_of::<u8>(),
             Value::Integer(_) => std::mem::size_of::<i64>(),
+            Value::Float(_) => std::mem::size_of::<f64>(),
             Value::VarChar(varchar) => varchar.len(),
             Value::Null => 0,
         }
@@ -93,6 +100,7 @@ impl Value {
         match self {
             Value::Boolean(_) => Some(DataType::Boolean),
             Value::Integer(_) => Some(DataType::Integer),
+            Value::Float(_) => Some(DataType::Float),
             Value::VarChar(_) => Some(DataType::VarChar),
             Value::Null => None,
         }
@@ -116,6 +124,10 @@ impl Serialize for Value {
                 let i = I64::new(*i);
                 i.write_to(&mut dst[0..8]).unwrap();
             }
+            Value::Float(f) => {
+                let f = F64::new(*f);
+                f.write_to(&mut dst[0..8]).unwrap();
+            }
             Value::VarChar(s) => {
                 let header = ValueHeader::new(s.len());
                 let offset = ValueHeader::SIZE;
@@ -133,9 +145,35 @@ impl PartialEq for Value {
         match (self, other) {
             (Self::Boolean(lhs), Self::Boolean(rhs)) => lhs.eq(rhs),
             (Self::Integer(lhs), Self::Integer(rhs)) => lhs.eq(rhs),
+            (Self::Float(lhs), Self::Float(rhs)) => {
+                // NOTE: most dbms consider 'NaN' == 'NaN' to be true.
+                // Comparision semantics differ from the IEEE 754 standard.
+                if lhs.is_nan() && rhs.is_nan()
+                    || (lhs.is_infinite() && rhs.is_infinite() && lhs.signum() == rhs.signum())
+                {
+                    true
+                } else {
+                    lhs.eq(rhs)
+                }
+            }
             (Self::VarChar(lhs), Self::VarChar(rhs)) => lhs.eq(rhs),
             (Self::Null, Self::Null) => true,
             _ => false,
         }
+    }
+}
+
+impl Eq for Value {}
+
+#[cfg(test)]
+mod tests {
+    use super::Value;
+
+    #[test]
+    fn float_nan_eq() {
+        let f1 = Value::Float(f64::NAN);
+        let f2 = Value::Float(f64::NAN);
+
+        assert_eq!(f1, f2);
     }
 }

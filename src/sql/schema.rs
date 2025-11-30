@@ -6,6 +6,7 @@ use thiserror::Error;
 pub enum DataType {
     Boolean,
     Integer,
+    Float,
     VarChar,
 }
 
@@ -14,6 +15,7 @@ impl From<DataType> for String {
         match data_type {
             DataType::Boolean => "BOOLEAN".to_string(),
             DataType::Integer => "INTEGER".to_string(),
+            DataType::Float => "FLOAT".to_string(),
             DataType::VarChar => "VARCHAR".to_string(),
         }
     }
