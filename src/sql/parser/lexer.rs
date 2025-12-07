@@ -28,7 +28,7 @@ enum TokenType {
     Less,
     LessEqual,
     // Literals.
-    Identifier(String),
+    Ident(String),
     String(String),
     Number(String),
     // Keywords.
@@ -186,16 +186,21 @@ impl<'a> Lexer<'a> {
 
     fn scan_ident(&mut self) -> Option<Token> {
         let current_offset = self.offset;
-        let ident = self
-            .chars
-            .peekable_take_while(|c| c.is_ascii_alphabetic() || *c == '_')
-            .collect::<String>();
+        let mut ident = self
+            .next_if(|c| c.is_alphabetic())?
+            .to_uppercase()
+            .to_string();
+        ident.extend(
+            self.chars
+                .peekable_take_while(|c| c.is_alphanumeric() || *c == '_')
+                .flat_map(|c| c.to_uppercase()),
+        );
         self.offset += ident.len();
 
         if let Ok(keyword) = Keyword::try_from(ident.as_str()) {
             Some(Token::new(TokenType::Keyword(keyword), current_offset))
         } else {
-            Some(Token::new(TokenType::Identifier(ident), current_offset))
+            Some(Token::new(TokenType::Ident(ident), current_offset))
         }
     }
 
