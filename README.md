@@ -19,7 +19,7 @@ DBMS development is an excellent project to teach yourself about system programm
 
 ### Query Execution Layer
 - [ ] SQL Parser
-  - [ ] Lexer for SQL tokens
+  - [x] Lexer for SQL tokens
   - [ ] Parser for basic SQL statements (SELECT, INSERT, UPDATE, DELETE)
   - [ ] AST representation of SQL queries
 - [ ] Query Planner/Optimizer
