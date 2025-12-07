@@ -52,6 +52,7 @@ enum Keyword {
 impl TryFrom<&str> for Keyword {
     type Error = &'static str;
 
+    /// Expects an uppercase string.
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(match value {
             "SELECT" => Keyword::Select,
@@ -187,12 +188,12 @@ impl<'a> Lexer<'a> {
     fn scan_ident(&mut self) -> Option<Token> {
         let current_offset = self.offset;
         let mut ident = self
-            .next_if(|c| c.is_alphabetic())?
+            .next_if(|c| c.is_ascii_alphabetic())?
             .to_uppercase()
             .to_string();
         ident.extend(
             self.chars
-                .peekable_take_while(|c| c.is_alphanumeric() || *c == '_')
+                .peekable_take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
                 .flat_map(|c| c.to_uppercase()),
         );
         self.offset += ident.len();
