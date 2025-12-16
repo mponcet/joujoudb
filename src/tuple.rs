@@ -189,7 +189,7 @@ impl Serialize for Tuple {
 
 #[cfg(test)]
 mod tests {
-    use crate::sql::schema::{Column, Constraints, DataType};
+    use crate::sql::schema::{Column, ConstraintsBuilder, DataType};
     use crate::sql::types::Value;
 
     use super::*;
@@ -197,10 +197,26 @@ mod tests {
     #[test]
     fn read_after_write() {
         let schema = Schema::try_new(vec![
-            Column::new("a".into(), DataType::Integer, Constraints::default()),
-            Column::new("b".into(), DataType::VarChar, Constraints::default()),
-            Column::new("c".into(), DataType::Boolean, Constraints::default()),
-            Column::new("d".into(), DataType::VarChar, Constraints::new(true, false)),
+            Column::new(
+                "a".into(),
+                DataType::Integer,
+                ConstraintsBuilder::new().build(),
+            ),
+            Column::new(
+                "b".into(),
+                DataType::VarChar,
+                ConstraintsBuilder::new().build(),
+            ),
+            Column::new(
+                "c".into(),
+                DataType::Boolean,
+                ConstraintsBuilder::new().build(),
+            ),
+            Column::new(
+                "d".into(),
+                DataType::VarChar,
+                ConstraintsBuilder::new().unique().build(),
+            ),
         ])
         .unwrap();
         let values = vec![
@@ -224,10 +240,26 @@ mod tests {
     #[test]
     fn validate_tuple_ok() {
         let schema = Schema::try_new(vec![
-            Column::new("a".into(), DataType::Integer, Constraints::default()),
-            Column::new("b".into(), DataType::VarChar, Constraints::default()),
-            Column::new("d".into(), DataType::VarChar, Constraints::default()),
-            Column::new("e".into(), DataType::VarChar, Constraints::new(true, false)),
+            Column::new(
+                "a".into(),
+                DataType::Integer,
+                ConstraintsBuilder::new().build(),
+            ),
+            Column::new(
+                "b".into(),
+                DataType::VarChar,
+                ConstraintsBuilder::new().build(),
+            ),
+            Column::new(
+                "d".into(),
+                DataType::VarChar,
+                ConstraintsBuilder::new().build(),
+            ),
+            Column::new(
+                "e".into(),
+                DataType::VarChar,
+                ConstraintsBuilder::new().nullable().build(),
+            ),
         ])
         .unwrap();
         let values = vec![
@@ -243,10 +275,26 @@ mod tests {
     #[test]
     fn validate_tuple_nullable() {
         let schema = Schema::try_new(vec![
-            Column::new("a".into(), DataType::Integer, Constraints::new(true, false)),
-            Column::new("b".into(), DataType::VarChar, Constraints::new(true, false)),
-            Column::new("c".into(), DataType::VarChar, Constraints::new(true, false)),
-            Column::new("d".into(), DataType::VarChar, Constraints::new(true, false)),
+            Column::new(
+                "a".into(),
+                DataType::Integer,
+                ConstraintsBuilder::new().nullable().build(),
+            ),
+            Column::new(
+                "b".into(),
+                DataType::VarChar,
+                ConstraintsBuilder::new().nullable().build(),
+            ),
+            Column::new(
+                "c".into(),
+                DataType::VarChar,
+                ConstraintsBuilder::new().nullable().build(),
+            ),
+            Column::new(
+                "d".into(),
+                DataType::VarChar,
+                ConstraintsBuilder::new().nullable().build(),
+            ),
         ])
         .unwrap();
         let values = vec![Value::Null, Value::Null, Value::Null, Value::Null];

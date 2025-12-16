@@ -151,7 +151,7 @@ mod tests {
 
     use crate::cache::GLOBAL_PAGE_CACHE;
     use crate::pages::{HeapPageSlotId, PageId, RecordId};
-    use crate::sql::schema::{Column, Constraints, DataType, Schema};
+    use crate::sql::schema::{Column, ConstraintsBuilder, DataType, Schema};
     use crate::sql::types::Value;
     use crate::storage::FileStorage;
     use crate::table::Table;
@@ -166,7 +166,7 @@ mod tests {
         let schema = Schema::try_new(vec![Column::new(
             "id".into(),
             DataType::Integer,
-            Constraints::new(false, false),
+            ConstraintsBuilder::new().build(),
         )])
         .unwrap();
 
@@ -200,12 +200,12 @@ mod tests {
             Column::new(
                 "id".into(),
                 DataType::Integer,
-                Constraints::new(false, false),
+                ConstraintsBuilder::new().build(),
             ),
             Column::new(
                 "name".into(),
                 DataType::VarChar,
-                Constraints::new(false, false),
+                ConstraintsBuilder::new().build(),
             ),
         ])
         .unwrap();

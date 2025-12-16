@@ -1,6 +1,6 @@
 use crate::cache::GLOBAL_PAGE_CACHE;
 use crate::config::CONFIG;
-use crate::sql::schema::{Column, Constraints, DataType, Schema};
+use crate::sql::schema::{Column, ConstraintsBuilder, DataType, Schema};
 use crate::sql::types::Value;
 use crate::storage::{DatabaseName, DatabaseRootDirectory, FileStorage, StorageBackend, TableName};
 use crate::table::Table;
@@ -31,25 +31,25 @@ static INFORMATION_SCHEMA_TABLES: LazyLock<Schema> = LazyLock::new(|| {
         Column {
             column_name: "TABLE_SCHEMA".into(),
             data_type: DataType::VarChar,
-            constraints: Constraints::new(false, false),
+            constraints: ConstraintsBuilder::new().build(),
         },
         // TABLE_TYPE: table or index.
         Column {
             column_name: "TABLE_TYPE".into(),
             data_type: DataType::VarChar,
-            constraints: Constraints::new(false, false),
+            constraints: ConstraintsBuilder::new().build(),
         },
         // TABLE_NAME: the name of the table.
         Column {
             column_name: "TABLE_NAME".into(),
             data_type: DataType::VarChar,
-            constraints: Constraints::new(false, true),
+            constraints: ConstraintsBuilder::new().unique().build(),
         },
         // TABLE_ROWS: the number of rows.
         Column {
             column_name: "TABLE_ROWS".into(),
             data_type: DataType::Integer,
-            constraints: Constraints::new(false, false),
+            constraints: ConstraintsBuilder::new().build(),
         },
     ])
     .unwrap()
@@ -61,25 +61,25 @@ static INFORMATION_SCHEMA_COLUMNS: LazyLock<Schema> = LazyLock::new(|| {
         Column {
             column_name: "TABLE_SCHEMA".into(),
             data_type: DataType::VarChar,
-            constraints: Constraints::new(false, false),
+            constraints: ConstraintsBuilder::new().build(),
         },
         // TABLE_NAME: the name of the table.
         Column {
             column_name: "TABLE_NAME".into(),
             data_type: DataType::VarChar,
-            constraints: Constraints::new(false, false),
+            constraints: ConstraintsBuilder::new().build(),
         },
         // COLUMN_NAME: the name of the column.
         Column {
             column_name: "COLUMN_NAME".into(),
             data_type: DataType::VarChar,
-            constraints: Constraints::new(false, true),
+            constraints: ConstraintsBuilder::new().unique().build(),
         },
         // ORDINAL_POSITION: the position of the column within the table.
         Column {
             column_name: "ORDINAL_POSITION".into(),
             data_type: DataType::Integer,
-            constraints: Constraints::new(false, false),
+            constraints: ConstraintsBuilder::new().build(),
         },
         // COLUMN_DEFAULT: the default value of the column.
         // Column {
@@ -91,13 +91,13 @@ static INFORMATION_SCHEMA_COLUMNS: LazyLock<Schema> = LazyLock::new(|| {
         Column {
             column_name: "IS_NULLABLE".into(),
             data_type: DataType::VarChar,
-            constraints: Constraints::new(false, false),
+            constraints: ConstraintsBuilder::new().build(),
         },
         // DATA_TYPE: the data type.
         Column {
             column_name: "DATA_TYPE".into(),
             data_type: DataType::VarChar,
-            constraints: Constraints::new(false, false),
+            constraints: ConstraintsBuilder::new().build(),
         },
     ])
     .unwrap()
@@ -238,12 +238,12 @@ mod tests {
             Column::new(
                 "id".into(),
                 DataType::Integer,
-                Constraints::new(false, false),
+                ConstraintsBuilder::new().build(),
             ),
             Column::new(
                 "name".into(),
                 DataType::VarChar,
-                Constraints::new(false, false),
+                ConstraintsBuilder::new().build(),
             ),
         ])
         .unwrap();

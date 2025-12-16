@@ -279,15 +279,23 @@ impl<'a> From<&'a mut Page> for &'a mut HeapPage {
 
 #[cfg(test)]
 mod tests {
-    use crate::sql::schema::{Column, Constraints, DataType, Schema};
+    use crate::sql::schema::{Column, ConstraintsBuilder, DataType, Schema};
     use crate::sql::types::Value;
 
     use super::*;
 
     fn test_schema() -> Schema {
         Schema::try_new(vec![
-            Column::new("a".into(), DataType::Integer, Constraints::default()),
-            Column::new("b".into(), DataType::VarChar, Constraints::default()),
+            Column::new(
+                "a".into(),
+                DataType::Integer,
+                ConstraintsBuilder::new().build(),
+            ),
+            Column::new(
+                "b".into(),
+                DataType::VarChar,
+                ConstraintsBuilder::new().build(),
+            ),
         ])
         .unwrap()
     }

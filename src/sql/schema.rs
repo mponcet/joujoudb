@@ -22,33 +22,38 @@ impl std::fmt::Display for DataType {
     }
 }
 
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
+pub struct ConstraintsBuilder(u8);
+
+impl ConstraintsBuilder {
+    pub fn new() -> Self {
+        Self(0)
+    }
+
+    pub fn nullable(mut self) -> Self {
+        self.0 |= 0b1;
+        self
+    }
+
+    pub fn unique(mut self) -> Self {
+        self.0 |= 0b10;
+        self
+    }
+
+    pub fn build(self) -> Constraints {
+        Constraints(self.0)
+    }
+}
+
+impl Default for ConstraintsBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Copy, Clone)]
 pub struct Constraints(u8);
 
 impl Constraints {
-    pub fn new(nullable: bool, unique: bool) -> Self {
-        let mut constraints = Self::default();
-
-        if nullable {
-            constraints.set_nullable();
-        }
-
-        if unique {
-            constraints.set_unique();
-        }
-
-        constraints
-    }
-
-    fn set_nullable(&mut self) {
-        self.0 |= 0b1
-    }
-
-    fn set_unique(&mut self) {
-        self.0 |= 0b10
-    }
-
     pub fn is_nullable(&self) -> bool {
         self.0 & 0b1 == 0b1
     }
@@ -116,12 +121,12 @@ mod tests {
             Column {
                 column_name: "a".into(),
                 data_type: DataType::Integer,
-                constraints: Constraints::new(true, false),
+                constraints: ConstraintsBuilder::new().unique().build(),
             },
             Column {
                 column_name: "b".into(),
                 data_type: DataType::VarChar,
-                constraints: Constraints::new(false, false),
+                constraints: ConstraintsBuilder::new().build(),
             },
         ];
 
