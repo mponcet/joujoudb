@@ -1,5 +1,6 @@
 use super::peekable_ext::PeekableExt;
 
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::iter::Peekable;
 use std::str::Chars;
@@ -8,7 +9,7 @@ use miette::{ByteOffset, Diagnostic, Result, SourceSpan};
 use thiserror::Error;
 
 #[derive(Debug, PartialEq, Eq)]
-enum TokenType {
+pub enum TokenKind<'source> {
     // Single-character token.
     LeftParen,
     RightParen,
@@ -28,15 +29,15 @@ enum TokenType {
     Less,
     LessEqual,
     // Literals.
-    Ident(String),
-    String(String),
-    Number(String),
+    Ident(Cow<'source, str>),
+    String(Cow<'source, str>),
+    Number(Cow<'source, str>),
     // Keywords.
     Keyword(Keyword),
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum Keyword {
+pub enum Keyword {
     Select,
     Insert,
     Update,
@@ -90,43 +91,37 @@ impl Display for Keyword {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Token {
-    token_type: TokenType,
+pub struct Token<'source> {
+    pub kind: TokenKind<'source>,
     offset: ByteOffset,
-}
-
-impl Token {
-    fn new(token_type: TokenType, offset: ByteOffset) -> Self {
-        Self { token_type, offset }
-    }
 }
 
 #[derive(Error, Debug, Diagnostic)]
 #[error("SyntaxError: unterminated string literal")]
-struct UnterminatedStringError {
+pub struct UnterminatedStringError {
     #[source_code]
     src: String,
     #[label("here")]
-    span: SourceSpan,
+    err_span: SourceSpan,
 }
 
 #[derive(Error, Debug, Diagnostic)]
 #[error("SyntaxError: unexpected token")]
-struct UnexpectedTokenError {
+pub struct UnexpectedTokenError {
     #[source_code]
     src: String,
     #[label("here")]
-    span: SourceSpan,
+    err_span: SourceSpan,
 }
 
-pub struct Lexer<'a> {
-    source: &'a str,
+pub struct Lexer<'source> {
+    source: &'source str,
     offset: ByteOffset,
-    chars: Peekable<Chars<'a>>,
+    chars: Peekable<Chars<'source>>,
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(source: &'a str) -> Self {
+impl<'source> Lexer<'source> {
+    pub fn new(source: &'source str) -> Self {
         Self {
             source,
             offset: 0,
@@ -145,48 +140,54 @@ impl<'a> Lexer<'a> {
         self.chars.next_if_eq(&c).is_some()
     }
 
-    fn scan_symbol(&mut self) -> Result<Option<Token>> {
-        let current_offset = self.offset;
+    fn scan_symbol(&mut self) -> Result<Option<Token<'source>>> {
+        let offset = self.offset;
         let single_char_token = match self.chars.next().unwrap() {
-            '(' => TokenType::LeftParen,
-            ')' => TokenType::RightParen,
-            ',' => TokenType::Comma,
-            '.' => TokenType::Dot,
-            '-' => TokenType::Minus,
-            '+' => TokenType::Plus,
-            ';' => TokenType::SemiColon,
-            '/' => TokenType::Slash,
-            '*' => TokenType::Star,
-            '!' => TokenType::Bang,
-            '=' => TokenType::Equal,
-            '<' => TokenType::Less,
-            '>' => TokenType::Greater,
+            '(' => TokenKind::LeftParen,
+            ')' => TokenKind::RightParen,
+            ',' => TokenKind::Comma,
+            '.' => TokenKind::Dot,
+            '-' => TokenKind::Minus,
+            '+' => TokenKind::Plus,
+            ';' => TokenKind::SemiColon,
+            '/' => TokenKind::Slash,
+            '*' => TokenKind::Star,
+            '!' => TokenKind::Bang,
+            '=' => TokenKind::Equal,
+            '<' => TokenKind::Less,
+            '>' => TokenKind::Greater,
             _ => {
                 return Err(UnexpectedTokenError {
                     src: self.source.to_string(),
-                    span: current_offset.into(),
+                    err_span: offset.into(),
                 })?;
             }
         };
 
         let double_char_token = match (&single_char_token, self.chars.peek()) {
-            (TokenType::Bang, Some('=')) => Some(TokenType::BangEqual),
-            (TokenType::Less, Some('=')) => Some(TokenType::LessEqual),
-            (TokenType::Greater, Some('=')) => Some(TokenType::GreaterEqual),
+            (TokenKind::Bang, Some('=')) => Some(TokenKind::BangEqual),
+            (TokenKind::Less, Some('=')) => Some(TokenKind::LessEqual),
+            (TokenKind::Greater, Some('=')) => Some(TokenKind::GreaterEqual),
             _ => None,
         };
 
         if let Some(double_char_token) = double_char_token {
             self.offset += 2;
-            Ok(Some(Token::new(double_char_token, current_offset)))
+            Ok(Some(Token {
+                kind: double_char_token,
+                offset,
+            }))
         } else {
             self.offset += 1;
-            Ok(Some(Token::new(single_char_token, current_offset)))
+            Ok(Some(Token {
+                kind: single_char_token,
+                offset,
+            }))
         }
     }
 
-    fn scan_ident(&mut self) -> Option<Token> {
-        let current_offset = self.offset;
+    fn scan_ident(&mut self) -> Option<Token<'source>> {
+        let offset = self.offset;
         let mut ident = self
             .next_if(|c| c.is_ascii_alphabetic())?
             .to_uppercase()
@@ -199,51 +200,74 @@ impl<'a> Lexer<'a> {
         self.offset += ident.len();
 
         if let Ok(keyword) = Keyword::try_from(ident.as_str()) {
-            Some(Token::new(TokenType::Keyword(keyword), current_offset))
+            Some(Token {
+                kind: TokenKind::Keyword(keyword),
+                offset,
+            })
         } else {
-            Some(Token::new(TokenType::Ident(ident), current_offset))
+            Some(Token {
+                kind: TokenKind::Ident(ident.into()),
+                offset,
+            })
         }
     }
 
-    fn scan_number(&mut self) -> Option<Token> {
-        let current_offset = self.offset;
-        let mut number = self
+    fn scan_number(&mut self) -> Option<Token<'source>> {
+        let offset = self.offset;
+        let mut end = self
             .chars
             .peekable_take_while(char::is_ascii_digit)
-            .collect::<String>();
+            .map(char::len_utf8)
+            .sum::<usize>();
 
         if self.next_eq('.') {
-            number.push('.');
-
-            number.extend(self.chars.peekable_take_while(char::is_ascii_digit));
+            end += '.'.len_utf8();
+            end += self
+                .chars
+                .peekable_take_while(char::is_ascii_digit)
+                .map(char::len_utf8)
+                .sum::<usize>();
 
             if let Some(e) = self.next_if(|&c| c == 'e' || c == 'E') {
-                number.push(e);
+                end += e.len_utf8();
                 if let Some(sign) = self.next_if(|&c| c == '+' || c == '-') {
-                    number.push(sign);
+                    end += sign.len_utf8();
                 }
-                number.extend(self.chars.peekable_take_while(char::is_ascii_digit));
+                end += self
+                    .chars
+                    .peekable_take_while(char::is_ascii_digit)
+                    .map(char::len_utf8)
+                    .sum::<usize>();
             }
         }
-        self.offset += number.len();
+        let number = &self.source[self.offset..self.offset + end];
+        self.offset += end;
 
-        Some(Token::new(TokenType::Number(number), current_offset))
+        Some(Token {
+            kind: TokenKind::Number(Cow::Borrowed(number)),
+            offset,
+        })
     }
 
-    fn scan_string_quoted(&mut self) -> Result<Option<Token>> {
-        let mut s = String::new();
-        let current_offset = self.offset;
-
+    fn scan_string_quoted(&mut self) -> Result<Option<Token<'source>>> {
+        let offset = self.offset;
         self.chars.next().unwrap();
         self.offset += '"'.len_utf8();
+        let mut s = Cow::Borrowed(&self.source[offset..offset]);
+
         loop {
-            match self.chars.next() {
+            let c = match self.chars.next() {
+                // \" is escaped to "
                 Some('\\') if self.next_eq('"') => {
-                    self.offset += '\"'.len_utf8();
-                    s.push('"');
+                    self.offset += "\\\"".len();
+                    s = Cow::Owned(s.into_owned());
+                    '"'
                 }
+                // "" is escaped to "
                 Some('"') if self.next_eq('"') => {
-                    s.push('"');
+                    self.offset += "\"\"".len();
+                    s = Cow::Owned(s.into_owned());
+                    '"'
                 }
                 Some('"') => {
                     self.offset += '"'.len_utf8();
@@ -251,32 +275,41 @@ impl<'a> Lexer<'a> {
                 }
                 Some(c) => {
                     self.offset += c.len_utf8();
-                    s.push(c);
+                    c
                 }
-                _ => {
+                None => {
                     return Err(UnterminatedStringError {
                         src: self.source.to_string(),
-                        span: current_offset.into(),
+                        err_span: offset.into(),
                     })?;
                 }
+            };
+
+            match s {
+                Cow::Borrowed(_) => s = Cow::Borrowed(&self.source[..self.offset]),
+                Cow::Owned(ref mut s) => s.push(c),
             }
         }
 
-        Ok(Some(Token::new(TokenType::String(s), current_offset)))
+        Ok(Some(Token {
+            kind: TokenKind::String(s),
+            offset,
+        }))
     }
 
-    fn scan_string_const(&mut self) -> Result<Option<Token>> {
-        let mut s = String::new();
-        let current_offset = self.offset;
-
+    fn scan_string_const(&mut self) -> Result<Option<Token<'source>>> {
+        let offset = self.offset;
         self.chars.next().unwrap();
         self.offset += '\''.len_utf8();
+        let mut s = Cow::Borrowed(&self.source[offset..offset]);
+
         loop {
-            match self.chars.next() {
+            let c = match self.chars.next() {
                 // '' is escaped to '
                 Some('\'') if self.next_eq('\'') => {
                     self.offset += "''".len();
-                    s.push('\'');
+                    s = Cow::Owned(s.into_owned());
+                    '\''
                 }
                 Some('\'') => {
                     self.offset += '\''.len_utf8();
@@ -284,25 +317,35 @@ impl<'a> Lexer<'a> {
                 }
                 Some(c) => {
                     self.offset += c.len_utf8();
-                    s.push(c);
+                    c
                 }
-                _ => {
+                None => {
                     return Err(UnterminatedStringError {
                         src: self.source.to_string(),
-                        span: current_offset.into(),
+                        err_span: offset.into(),
                     })?;
                 }
+            };
+
+            match s {
+                Cow::Borrowed(_) => s = Cow::Borrowed(&self.source[..self.offset]),
+                Cow::Owned(ref mut s) => s.push(c),
             }
         }
 
-        Ok(Some(Token::new(TokenType::String(s), current_offset)))
+        Ok(Some(Token {
+            kind: TokenKind::String(s),
+            offset,
+        }))
     }
 
-    fn scan(&mut self) -> Result<Option<Token>> {
+    fn scan(&mut self) -> Result<Option<Token<'source>>> {
         // skip whitespaces
-        while self.chars.next_if(char::is_ascii_whitespace).is_some() {
-            self.offset += ' '.len_utf8();
-        }
+        self.offset += self
+            .chars
+            .peekable_take_while(char::is_ascii_whitespace)
+            .map(char::len_utf8)
+            .sum::<usize>();
 
         let Some(c) = self.chars.peek() else {
             return Ok(None);
@@ -317,8 +360,8 @@ impl<'a> Lexer<'a> {
     }
 }
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = Result<Token>;
+impl<'source> Iterator for Lexer<'source> {
+    type Item = Result<Token<'source>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.scan() {
