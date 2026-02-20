@@ -1,8 +1,7 @@
 use crate::pages::{PAGE_SIZE, Page, PageId};
 
 use std::fs::{File, OpenOptions};
-use std::io::Write;
-use std::os::unix::fs::{FileExt, OpenOptionsExt};
+use std::os::unix::fs::{FileExt, MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
 use thiserror::Error;
@@ -39,7 +38,7 @@ impl FileStorage {
     ///
     /// Returns a `Result` containing the `Storage` instance if successful, or a `StorageError` on failure.
     pub fn create<P: AsRef<Path>>(path: P) -> Result<Self, StorageError> {
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
@@ -48,20 +47,24 @@ impl FileStorage {
             .open(path)
             .map_err(StorageError::Io)?;
 
-        if file.metadata()?.len() == 0 {
+        let file = Self { file };
+
+        if file.file.metadata()?.len() == 0 {
             // Create reserved page
-            file.write_all(&[0; PAGE_SIZE])?;
-            file.sync_all().expect("fsync failed");
+            let reserved_page = Page::new();
+            let reserved_page_id = PageId::new(0);
+            file.write_page(&reserved_page, reserved_page_id)?;
+            file.fsync();
         }
 
-        Ok(Self { file })
+        Ok(file)
     }
 
     /// Opens a new storage file.
     ///
     /// Returns a `Result` containing the `Storage` instance if successful, or a `StorageError` on failure.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, StorageError> {
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(false)
@@ -70,13 +73,17 @@ impl FileStorage {
             .open(path)
             .map_err(StorageError::Io)?;
 
-        if file.metadata()?.len() == 0 {
+        let file = Self { file };
+
+        if file.file.metadata()?.len() == 0 {
             // Create reserved page
-            file.write_all(&[0; PAGE_SIZE])?;
-            file.sync_all().expect("fsync failed");
+            let reserved_page = Page::new();
+            let reserved_page_id = PageId::new(0);
+            file.write_page(&reserved_page, reserved_page_id)?;
+            file.fsync();
         }
 
-        Ok(Self { file })
+        Ok(file)
     }
 }
 
@@ -99,10 +106,15 @@ impl StorageBackend for FileStorage {
     /// Returns an empty `Result` if successful, or a `StorageError` on failure.
     fn write_page(&self, page: &Page, page_id: PageId) -> Result<(), StorageError> {
         let offset = page_id.get() as u64 * PAGE_SIZE as u64;
+        let blksize = self.file.metadata()?.blksize() as usize;
+        assert_eq!(PAGE_SIZE % blksize, 0);
 
-        self.file
-            .write_all_at(page.data.as_slice(), offset)
-            .map_err(StorageError::Io)?;
+        for page_offset in (0..PAGE_SIZE).step_by(blksize) {
+            let block = &page.data[page_offset..blksize];
+            self.file
+                .write_all_at(block, offset + page_offset as u64)
+                .map_err(StorageError::Io)?
+        }
 
         Ok(())
     }
@@ -126,8 +138,10 @@ impl StorageBackend for FileStorage {
     /// Allocates a new page and returns the ID of the last page in the database file.
     fn allocate_page(&self) -> Result<PageId, StorageError> {
         let offset = self.file.metadata()?.len();
-        self.file.write_all_at(&[0; PAGE_SIZE], offset)?;
-        Ok(PageId::new((offset / PAGE_SIZE as u64) as u32))
+        let page = Page::new();
+        let page_id = PageId::new((offset / PAGE_SIZE as u64) as u32);
+        self.write_page(&page, page_id)?;
+        Ok(page_id)
     }
 
     fn first_page_id(&self) -> PageId {

@@ -300,7 +300,7 @@ mod tests {
     #[test]
     fn evict_page_lru() {
         let storage_path = NamedTempFile::new().unwrap();
-        let storage = FileStorage::create(storage_path).unwrap();
+        let storage = FileStorage::open(storage_path).unwrap();
         let page_cache = PageCache::try_new().unwrap();
         let file_cache = page_cache.cache_storage(storage);
 
