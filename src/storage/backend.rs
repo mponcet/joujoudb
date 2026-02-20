@@ -1,7 +1,7 @@
 use crate::pages::{PAGE_SIZE, Page, PageId};
 
 use std::fs::{File, OpenOptions};
-use std::os::unix::fs::{FileExt, MetadataExt, OpenOptionsExt};
+use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::Path;
 
 use thiserror::Error;
@@ -96,9 +96,7 @@ impl StorageBackend for FileStorage {
 
         self.file
             .read_exact_at(page.data.as_mut_slice(), offset)
-            .map_err(StorageError::Io)?;
-
-        Ok(())
+            .map_err(StorageError::Io)
     }
 
     /// Writes a page to the database file.
@@ -106,17 +104,10 @@ impl StorageBackend for FileStorage {
     /// Returns an empty `Result` if successful, or a `StorageError` on failure.
     fn write_page(&self, page: &Page, page_id: PageId) -> Result<(), StorageError> {
         let offset = page_id.get() as u64 * PAGE_SIZE as u64;
-        let blksize = self.file.metadata()?.blksize() as usize;
-        assert_eq!(PAGE_SIZE % blksize, 0);
 
-        for page_offset in (0..PAGE_SIZE).step_by(blksize) {
-            let block = &page.data[page_offset..blksize];
-            self.file
-                .write_all_at(block, offset + page_offset as u64)
-                .map_err(StorageError::Io)?
-        }
-
-        Ok(())
+        self.file
+            .write_all_at(page.data.as_slice(), offset)
+            .map_err(StorageError::Io)
     }
 
     /// Attempts to sync file data and metadata to the disk.
