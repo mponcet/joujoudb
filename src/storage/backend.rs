@@ -48,9 +48,9 @@ impl FileStorage {
             .open(path)
             .map_err(StorageError::Io)?;
 
-        if file.metadata().unwrap().len() == 0 {
+        if file.metadata()?.len() == 0 {
             // Create reserved page
-            file.write_all(&[0; PAGE_SIZE]).unwrap();
+            file.write_all(&[0; PAGE_SIZE])?;
             file.sync_all().expect("fsync failed");
         }
 
@@ -70,9 +70,9 @@ impl FileStorage {
             .open(path)
             .map_err(StorageError::Io)?;
 
-        if file.metadata().unwrap().len() == 0 {
+        if file.metadata()?.len() == 0 {
             // Create reserved page
-            file.write_all(&[0; PAGE_SIZE]).unwrap();
+            file.write_all(&[0; PAGE_SIZE])?;
             file.sync_all().expect("fsync failed");
         }
 
