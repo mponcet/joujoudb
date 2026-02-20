@@ -114,7 +114,7 @@ impl<S: StorageBackend + 'static> PageCacheInner<S> {
     pub fn new_page(&self, storage_id: StorageId) -> Result<PageRefMut<'_>, PageCacheError> {
         let guard = self.storage_backends.read();
         let storage = guard.get(&storage_id).unwrap();
-        let page_id = storage.allocate_page();
+        let page_id = storage.allocate_page()?;
 
         // try evict a page if the memory cache is full
         // FIXME: race condition

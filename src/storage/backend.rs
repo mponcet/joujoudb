@@ -20,7 +20,7 @@ pub trait StorageBackend: Sync + Send {
     fn read_page(&self, page_id: PageId, page: &mut Page) -> Result<(), StorageError>;
     fn write_page(&self, page: &Page, page_id: PageId) -> Result<(), StorageError>;
     fn fsync(&self);
-    fn allocate_page(&self) -> PageId;
+    fn allocate_page(&self) -> Result<PageId, StorageError>;
     fn first_page_id(&self) -> PageId;
     fn last_page_id(&self) -> PageId;
 }
@@ -124,10 +124,10 @@ impl StorageBackend for FileStorage {
     }
 
     /// Allocates a new page and returns the ID of the last page in the database file.
-    fn allocate_page(&self) -> PageId {
-        let offset = self.file.metadata().unwrap().len();
-        self.file.write_all_at(&[0; PAGE_SIZE], offset).unwrap();
-        PageId::new((offset / PAGE_SIZE as u64) as u32)
+    fn allocate_page(&self) -> Result<PageId, StorageError> {
+        let offset = self.file.metadata()?.len();
+        self.file.write_all_at(&[0; PAGE_SIZE], offset)?;
+        Ok(PageId::new((offset / PAGE_SIZE as u64) as u32))
     }
 
     fn first_page_id(&self) -> PageId {
