@@ -77,7 +77,7 @@ impl<S: StorageBackend + 'static> Table<S> {
     pub fn delete(&self, record_id: RecordId) -> Result<(), TableError> {
         let mut page_ref = self
             .cache
-            .get_page_mut(self.cache.last_page_id())
+            .get_page_mut(record_id.page_id)
             .map_err(TableError::PageCache)?;
         let heappage = page_ref.heap_page_mut();
 
