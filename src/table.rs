@@ -1,5 +1,5 @@
 use crate::cache::{PageCacheError, StoragePageCache};
-use crate::pages::{HeapPageError, HeapPageSlotId, PageId, RecordId};
+use crate::pages::{HeapPageError, HeapPageSlotId, PAGE_RESERVED, PageId, RecordId};
 use crate::sql::schema::Schema;
 use crate::storage::StorageBackend;
 use crate::tuple::{Tuple, TupleError};
@@ -51,10 +51,14 @@ impl<S: StorageBackend + 'static> Table<S> {
     pub fn insert(&self, tuple: &Tuple) -> Result<RecordId, TableError> {
         self.validate_tuple(tuple)?;
 
-        let mut page_ref = self
-            .cache
-            .get_page_mut(self.cache.last_page_id())
-            .map_err(TableError::PageCache)?;
+        let last_page_id = self.cache.last_page_id();
+        let mut page_ref = if last_page_id == PAGE_RESERVED {
+            // Allocate the first heap page.
+            self.cache.new_page()?
+        } else {
+            self.cache.get_page_mut(last_page_id)?
+        };
+
         let heappage = page_ref.heap_page_mut();
         match heappage.insert_tuple(tuple) {
             Ok(slot_id) => {

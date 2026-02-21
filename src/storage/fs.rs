@@ -71,7 +71,7 @@ impl TableFile {
             .path
             .as_path()
             .join(format!("{}.tbl", table_name.as_str()));
-        fs::File::create_new(path.as_path())?;
+        FileStorage::create(&path).unwrap();
         Self::from_path(path)
     }
 

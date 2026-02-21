@@ -3,6 +3,7 @@ use crate::pages::{PAGE_SIZE, Page, PageId};
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use thiserror::Error;
 
@@ -13,6 +14,8 @@ pub struct StorageId(pub u32);
 pub enum StorageError {
     #[error("io error")]
     Io(#[from] std::io::Error),
+    #[error("file corrupted")]
+    FileCorrupted,
 }
 
 pub trait StorageBackend: Sync + Send {
@@ -31,6 +34,7 @@ pub trait StorageBackend: Sync + Send {
 /// is written directly to the disk.
 pub struct FileStorage {
     file: File,
+    last_page_id: AtomicU32,
 }
 
 impl FileStorage {
@@ -47,7 +51,10 @@ impl FileStorage {
             .open(path)
             .map_err(StorageError::Io)?;
 
-        let file = Self { file };
+        let file = Self {
+            file,
+            last_page_id: AtomicU32::new(0),
+        };
 
         if file.file.metadata()?.len() == 0 {
             // Create reserved page
@@ -73,15 +80,16 @@ impl FileStorage {
             .open(path)
             .map_err(StorageError::Io)?;
 
-        let file = Self { file };
-
-        if file.file.metadata()?.len() == 0 {
-            // Create reserved page
-            let reserved_page = Page::new();
-            let reserved_page_id = PageId::new(0);
-            file.write_page(&reserved_page, reserved_page_id)?;
-            file.fsync();
+        let len = file.metadata()?.len() as usize;
+        if len == 0 || !len.is_multiple_of(PAGE_SIZE) {
+            return Err(StorageError::FileCorrupted);
         }
+
+        let last_page_id = (len / PAGE_SIZE) as u32 - 1;
+        let file = Self {
+            file,
+            last_page_id: AtomicU32::new(last_page_id),
+        };
 
         Ok(file)
     }
@@ -126,13 +134,14 @@ impl StorageBackend for FileStorage {
         }
     }
 
-    /// Allocates a new page and returns the ID of the last page in the database file.
+    /// Allocates a new page and returns its id.
     fn allocate_page(&self) -> Result<PageId, StorageError> {
-        let offset = self.file.metadata()?.len();
-        let page = Page::new();
-        let page_id = PageId::new((offset / PAGE_SIZE as u64) as u32);
-        self.write_page(&page, page_id)?;
-        Ok(page_id)
+        let last_page_id = self.last_page_id.fetch_add(1, Ordering::Relaxed) + 1;
+        let new_page_id = PageId::new(last_page_id);
+        let new_page = Page::new();
+        // TODO: could use posix_fallocate.
+        self.write_page(&new_page, new_page_id)?;
+        Ok(new_page_id)
     }
 
     fn first_page_id(&self) -> PageId {
@@ -143,7 +152,6 @@ impl StorageBackend for FileStorage {
     ///
     /// TODO: implement a free space map for more efficent storage.
     fn last_page_id(&self) -> PageId {
-        let offset = self.file.metadata().unwrap().len();
-        PageId::new(((offset / PAGE_SIZE as u64) - 1) as u32)
+        PageId::new(self.last_page_id.load(Ordering::Relaxed))
     }
 }
