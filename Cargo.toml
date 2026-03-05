@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "lexer"
 path = "src/bin/lexer.rs"
 
+[[bin]]
+name = "parser"
+path = "src/bin/parser.rs"
+
 [dependencies]
 byteorder = "1.5.0"
 chrono = "0.4.44"
