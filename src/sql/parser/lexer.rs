@@ -8,8 +8,8 @@ use std::str::Chars;
 use miette::{ByteOffset, Diagnostic, Result, SourceSpan};
 use thiserror::Error;
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum TokenKind<'source> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TokenKind {
     // Single-character tokens.
     LeftParen,
     RightParen,
@@ -29,9 +29,9 @@ pub enum TokenKind<'source> {
     Less,
     LessEqual,
     // Literals.
-    Ident(&'source str),
-    String(Cow<'source, str>),
-    Number(&'source str),
+    Ident,
+    String,
+    Number,
     // Keywords.
     Keyword(Keyword),
     // EOF
@@ -39,6 +39,31 @@ pub enum TokenKind<'source> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub enum TokenKindTag {
+    LeftParen,
+    RightParen,
+    Comma,
+    Dot,
+    Minus,
+    Plus,
+    SemiColon,
+    Slash,
+    Asterisk,
+    Bang,
+    BangEqual,
+    Equal,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
+    Ident,
+    String,
+    Number,
+    Keyword,
+    Eof,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Keyword {
     Select,
     Insert,
@@ -47,6 +72,7 @@ pub enum Keyword {
     All,
     Distinct,
     From,
+    Where,
     And,
     Or,
     False,
@@ -73,6 +99,8 @@ impl TryFrom<&str> for Keyword {
             Keyword::Distinct
         } else if is("FROM") {
             Keyword::From
+        } else if is("WHERE") {
+            Keyword::Where
         } else if is("AND") {
             Keyword::And
         } else if is("OR") {
@@ -89,7 +117,7 @@ impl TryFrom<&str> for Keyword {
     }
 }
 
-impl Display for TokenKind<'_> {
+impl Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let kind = match self {
             TokenKind::LeftParen => "(",
@@ -108,9 +136,9 @@ impl Display for TokenKind<'_> {
             TokenKind::GreaterEqual => ">=",
             TokenKind::Less => "<",
             TokenKind::LessEqual => "<=",
-            TokenKind::Ident(ident) => ident,
-            TokenKind::String(cow) => return write!(f, "{}", cow),
-            TokenKind::Number(number) => number,
+            TokenKind::Ident => "identifer",
+            TokenKind::String => "string",
+            TokenKind::Number => "number",
             TokenKind::Eof => "EOF",
             TokenKind::Keyword(keyword) => return write!(f, "{}", keyword),
         };
@@ -129,6 +157,7 @@ impl Display for Keyword {
             Keyword::All => "ALL",
             Keyword::Distinct => "DISTINCT",
             Keyword::From => "FROM",
+            Keyword::Where => "WHERE",
             Keyword::And => "AND",
             Keyword::Or => "OR",
             Keyword::False => "FALSE",
@@ -142,7 +171,8 @@ impl Display for Keyword {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Token<'source> {
-    pub kind: TokenKind<'source>,
+    pub kind: TokenKind,
+    pub text: Cow<'source, str>,
     pub offset: ByteOffset,
 }
 
@@ -229,17 +259,21 @@ impl<'source> Lexer<'source> {
         };
 
         if let Some(double_char_token) = double_char_token {
-            self.offset += 2;
-            Ok(Some(Token {
+            let token = Token {
                 kind: double_char_token,
+                text: Cow::from(&self.source[self.offset..self.offset + 2]),
                 offset,
-            }))
+            };
+            self.offset += 2;
+            Ok(Some(token))
         } else {
-            self.offset += 1;
-            Ok(Some(Token {
+            let token = Token {
                 kind: single_char_token,
+                text: Cow::from(&self.source[self.offset..self.offset + 1]),
                 offset,
-            }))
+            };
+            self.offset += 1;
+            Ok(Some(token))
         }
     }
 
@@ -256,11 +290,13 @@ impl<'source> Lexer<'source> {
         if let Ok(keyword) = Keyword::try_from(ident) {
             Some(Token {
                 kind: TokenKind::Keyword(keyword),
+                text: Cow::from(ident),
                 offset,
             })
         } else {
             Some(Token {
-                kind: TokenKind::Ident(ident),
+                kind: TokenKind::Ident,
+                text: Cow::from(ident),
                 offset,
             })
         }
@@ -295,7 +331,8 @@ impl<'source> Lexer<'source> {
         self.offset += len;
 
         Some(Token {
-            kind: TokenKind::Number(number),
+            kind: TokenKind::Number,
+            text: Cow::from(number),
             offset,
         })
     }
@@ -344,7 +381,8 @@ impl<'source> Lexer<'source> {
         }
 
         Ok(Some(Token {
-            kind: TokenKind::String(s),
+            kind: TokenKind::String,
+            text: s,
             offset: token_start,
         }))
     }
@@ -387,7 +425,8 @@ impl<'source> Lexer<'source> {
         }
 
         Ok(Some(Token {
-            kind: TokenKind::String(s),
+            kind: TokenKind::String,
+            text: s,
             offset: token_start,
         }))
     }
@@ -402,6 +441,7 @@ impl<'source> Lexer<'source> {
         let Some(c) = self.chars.peek() else {
             return Ok(Some(Token {
                 kind: TokenKind::Eof,
+                text: Cow::from(&self.source[self.offset..]),
                 offset: self.offset.saturating_sub(1),
             }));
         };
