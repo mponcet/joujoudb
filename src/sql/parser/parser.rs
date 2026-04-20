@@ -33,7 +33,7 @@ trait TokenKindExt {
     fn infix_binding_power(&self) -> Option<(u8, u8)>;
 }
 
-impl TokenKindExt for TokenKind<'_> {
+impl TokenKindExt for TokenKind {
     fn prefix_binding_power(&self) -> ((), u8) {
         match self {
             TokenKind::Plus | TokenKind::Minus => ((), 5),
@@ -98,22 +98,21 @@ impl<'source> Parser<'source> {
         Some(result)
     }
 
-    fn expect(&mut self, expected: TokenKind) -> Result<()> {
+    fn expect(&mut self, expected: TokenKind) -> Result<Token<'source>> {
         match self.next()? {
-            Some(token) if token.kind == expected => Ok(()),
-            Some(token) => match token.kind {
-                TokenKind::Eof => Err(ParserError {
-                    message: format!("unexpected end of file, expected '{}'", expected),
-                    src: self.source.to_string(),
-                    err_span: token.offset.into(),
-                })?,
-                _ => Err(ParserError {
-                    message: format!("expected '{}', found '{}'", expected, token.kind),
-                    src: self.source.to_string(),
-                    err_span: token.offset.into(),
-                })?,
-            },
-            _ => unreachable!(),
+            Some(token) if token.kind == expected => Ok(token),
+            Some(token) if token.kind == TokenKind::Eof => Err(ParserError {
+                message: format!("unexpected end of file, expected `{}`", expected),
+                src: self.source.to_string(),
+                err_span: token.offset.into(),
+            })?,
+
+            Some(token) => Err(ParserError {
+                message: format!("expected `{}`, found `{}`", expected, token.kind),
+                src: self.source.to_string(),
+                err_span: token.offset.into(),
+            })?,
+            None => unreachable!(),
         }
     }
 
@@ -136,12 +135,13 @@ impl<'source> Parser<'source> {
 
         let mut lhs = match token.kind {
             TokenKind::Asterisk => ast::Expression::All,
-            TokenKind::Ident(s) => ast::Expression::Column {
+            TokenKind::Ident => ast::Expression::Column {
                 // TODO: handle table name
                 table: None,
-                name: s,
+                name: token.text,
             },
-            TokenKind::Number(n) => {
+            TokenKind::Number => {
+                let n = token.text.as_ref();
                 if n.find('.').is_some() {
                     ast::Expression::Literal(ast::Literal::Float(n.parse().map_err(|e| {
                         ParserError {
@@ -247,7 +247,6 @@ impl<'source> Parser<'source> {
                 stmts.push(stmt);
             }
         }
-        // if let TokenKind::Keyword(keyword) = token.kind {}
 
         Ok(stmts)
     }
@@ -266,7 +265,13 @@ impl<'source> Parser<'source> {
             .unwrap_or(false);
 
         let columns = self.parse_select_list()?;
-        let from = self.parse_select_from()?;
+        let from = if self.next_eq(TokenKind::Eof) {
+            None
+        } else {
+            Some(self.parse_select_from()?)
+        };
+
+        // self.expect(TokenKind::Keyword(Keyword::Where))?;
 
         self.next_if(|kind| *kind == TokenKind::SemiColon);
 
@@ -295,13 +300,10 @@ impl<'source> Parser<'source> {
         self.expect(TokenKind::Keyword(Keyword::From))?;
         let mut select_from = Vec::new();
 
-        while let Some(token) = self.peek()? {
-            if let TokenKind::Ident(ident) = token.kind {
-                select_from.push(ast::From(ident));
-            } else {
-                break;
-            }
-            self.next()?;
+        loop {
+            let token = self.expect(TokenKind::Ident)?;
+            select_from.push(ast::From { table: token.text });
+
             if !self.next_eq(TokenKind::Comma) {
                 break;
             }

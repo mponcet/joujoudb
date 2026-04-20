@@ -5,7 +5,7 @@ pub enum Stmt<'source> {
     Select {
         distinct: bool,
         columns: Vec<Expression<'source>>,
-        from: Vec<From<'source>>,
+        from: Option<Vec<From<'source>>>,
         // r#where: Option<String>,
         // group_by: Option<String>,
         // having: Option<String>,
@@ -21,7 +21,9 @@ pub enum Stmt<'source> {
 // }
 
 #[derive(Debug)]
-pub struct From<'source>(pub &'source str);
+pub struct From<'source> {
+    pub table: Cow<'source, str>,
+}
 
 #[derive(Debug)]
 pub enum Expression<'source> {
@@ -29,8 +31,8 @@ pub enum Expression<'source> {
     All,
     // Column name and if specified, a table name.
     Column {
-        table: Option<&'source str>,
-        name: &'source str,
+        table: Option<Cow<'source, str>>,
+        name: Cow<'source, str>,
     },
     // A literal.
     Literal(Literal<'source>),
