@@ -43,8 +43,8 @@ impl TokenKindExt for TokenKind {
 
     fn infix_binding_power(&self) -> Option<(u8, u8)> {
         let bp = match self {
-            TokenKind::Plus | TokenKind::Minus => (1, 2),
-            TokenKind::Asterisk | TokenKind::Slash => (3, 4),
+            TokenKind::Plus | TokenKind::Minus | TokenKind::Keyword(Keyword::Or) => (1, 2),
+            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Keyword(Keyword::And) => (3, 4),
             _ => return None,
         };
 
@@ -193,6 +193,8 @@ impl<'source> Parser<'source> {
                 TokenKind::Minus => TokenKind::Minus,
                 TokenKind::Asterisk => TokenKind::Asterisk,
                 TokenKind::Slash => TokenKind::Slash,
+                TokenKind::Keyword(Keyword::Or) => TokenKind::Keyword(Keyword::Or),
+                TokenKind::Keyword(Keyword::And) => TokenKind::Keyword(Keyword::And),
                 TokenKind::RightParen => TokenKind::RightParen,
                 TokenKind::Eof => break,
                 _ => {
@@ -209,11 +211,15 @@ impl<'source> Parser<'source> {
                 let Ok(rhs) = self.parse_expr_bp(r_bp) else {
                     break;
                 };
+
+                let (l, r) = (Box::new(lhs), Box::new(rhs));
                 let operator = match kind {
-                    TokenKind::Plus => ast::Operator::Plus(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Minus => ast::Operator::Minus(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Asterisk => ast::Operator::Mul(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Slash => ast::Operator::Div(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::Plus => ast::Operator::Plus(l, r),
+                    TokenKind::Minus => ast::Operator::Minus(l, r),
+                    TokenKind::Asterisk => ast::Operator::Mul(l, r),
+                    TokenKind::Slash => ast::Operator::Div(l, r),
+                    TokenKind::Keyword(Keyword::Or) => ast::Operator::Or(l, r),
+                    TokenKind::Keyword(Keyword::And) => ast::Operator::And(l, r),
                     _ => todo!(),
                 };
                 lhs = ast::Expression::Operator(operator);
@@ -265,13 +271,16 @@ impl<'source> Parser<'source> {
             .unwrap_or(false);
 
         let columns = self.parse_select_list()?;
-        let from = if self.next_eq(TokenKind::Eof) {
-            None
-        } else {
+        let from = if self.next_eq(TokenKind::Keyword(Keyword::From)) {
             Some(self.parse_select_from()?)
+        } else {
+            None
         };
-
-        // self.expect(TokenKind::Keyword(Keyword::Where))?;
+        let r#where = if self.next_eq(TokenKind::Keyword(Keyword::Where)) {
+            Some(self.parse_select_where()?)
+        } else {
+            None
+        };
 
         self.next_if(|kind| *kind == TokenKind::SemiColon);
 
@@ -279,6 +288,7 @@ impl<'source> Parser<'source> {
             distinct,
             columns,
             from,
+            r#where,
         })
     }
 
@@ -297,7 +307,6 @@ impl<'source> Parser<'source> {
     }
 
     fn parse_select_from(&mut self) -> Result<Vec<ast::From<'source>>> {
-        self.expect(TokenKind::Keyword(Keyword::From))?;
         let mut select_from = Vec::new();
 
         loop {
@@ -310,5 +319,11 @@ impl<'source> Parser<'source> {
         }
 
         Ok(select_from)
+    }
+
+    fn parse_select_where(&mut self) -> Result<ast::Where<'source>> {
+        Ok(ast::Where {
+            expr: self.parse_expr()?,
+        })
     }
 }

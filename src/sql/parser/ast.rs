@@ -6,7 +6,7 @@ pub enum Stmt<'source> {
         distinct: bool,
         columns: Vec<Expression<'source>>,
         from: Option<Vec<From<'source>>>,
-        // r#where: Option<String>,
+        r#where: Option<Where<'source>>,
         // group_by: Option<String>,
         // having: Option<String>,
         // window: Option<String>,
@@ -23,6 +23,11 @@ pub enum Stmt<'source> {
 #[derive(Debug)]
 pub struct From<'source> {
     pub table: Cow<'source, str>,
+}
+
+#[derive(Debug)]
+pub struct Where<'source> {
+    pub expr: Expression<'source>,
 }
 
 #[derive(Debug)]
@@ -46,6 +51,8 @@ pub enum Operator<'source> {
     Minus(Box<Expression<'source>>, Box<Expression<'source>>),
     Mul(Box<Expression<'source>>, Box<Expression<'source>>),
     Div(Box<Expression<'source>>, Box<Expression<'source>>),
+    Or(Box<Expression<'source>>, Box<Expression<'source>>),
+    And(Box<Expression<'source>>, Box<Expression<'source>>),
 
     // Unary
     Identity(Box<Expression<'source>>),
