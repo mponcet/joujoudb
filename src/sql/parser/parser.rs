@@ -1,4 +1,4 @@
-use crate::sql::parser::ast::{self, Stmt};
+use crate::sql::parser::ast;
 use crate::sql::parser::lexer::{Keyword, Lexer, Token, TokenKind};
 
 use std::iter::Peekable;
@@ -120,7 +120,7 @@ impl<'source> Parser<'source> {
         self.next_if(|kind| *kind == expected).is_some()
     }
 
-    pub fn parse(source: &'source str) -> Result<Vec<Stmt<'source>>> {
+    pub fn parse(source: &'source str) -> Result<Vec<ast::Stmt<'source>>> {
         let mut parser = Parser::new(source);
         parser.parse_statement()
     }
@@ -232,7 +232,7 @@ impl<'source> Parser<'source> {
         Ok(lhs)
     }
 
-    fn parse_statement(&mut self) -> Result<Vec<Stmt<'source>>> {
+    fn parse_statement(&mut self) -> Result<Vec<ast::Stmt<'source>>> {
         let mut stmts = Vec::new();
 
         while let Some(token) = self.next()? {
@@ -325,5 +325,28 @@ impl<'source> Parser<'source> {
         Ok(ast::Where {
             expr: self.parse_expr()?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn select() {
+        let stms = [
+            "SELECT a,b,c",
+            "SELECT 1",
+            "SELECT 1+1*2",
+            "SELECT * FROM table",
+            "SELECT * FROM table WHERE 1<1",
+            "SELECT * FROM table1,table2",
+        ];
+
+        for stmt in stms {
+            let parser = Parser::parse(stmt).unwrap();
+            let parsed = parser.first().unwrap().to_string();
+            assert_eq!(stmt, parsed);
+        }
     }
 }
