@@ -119,6 +119,12 @@ pub enum Operator<'source> {
     Div(Box<Expression<'source>>, Box<Expression<'source>>),
     Or(Box<Expression<'source>>, Box<Expression<'source>>),
     And(Box<Expression<'source>>, Box<Expression<'source>>),
+    Equal(Box<Expression<'source>>, Box<Expression<'source>>),
+    NotEqual(Box<Expression<'source>>, Box<Expression<'source>>),
+    Less(Box<Expression<'source>>, Box<Expression<'source>>),
+    LessEqual(Box<Expression<'source>>, Box<Expression<'source>>),
+    Greater(Box<Expression<'source>>, Box<Expression<'source>>),
+    GreaterEqual(Box<Expression<'source>>, Box<Expression<'source>>),
 
     // Unary
     Identity(Box<Expression<'source>>),
@@ -136,6 +142,12 @@ impl<'source> std::fmt::Display for Operator<'source> {
             Operator::And(lhs, rhs) => write!(f, "{lhs} AND {rhs}"),
             Operator::Identity(expr) => write!(f, "{expr}"),
             Operator::Negate(expr) => write!(f, "-{expr}"),
+            Operator::Equal(lhs, rhs) => write!(f, "{lhs}={rhs}"),
+            Operator::NotEqual(lhs, rhs) => write!(f, "{lhs}!={rhs}"),
+            Operator::Less(lhs, rhs) => write!(f, "{lhs}<{rhs}"),
+            Operator::LessEqual(lhs, rhs) => write!(f, "{lhs}<={rhs}"),
+            Operator::Greater(lhs, rhs) => write!(f, "{lhs}>{rhs}"),
+            Operator::GreaterEqual(lhs, rhs) => write!(f, "{lhs}>={rhs}"),
         }
     }
 }
@@ -153,7 +165,7 @@ impl<'source> std::fmt::Display for Literal<'source> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Literal::Ident(cow) => write!(f, "{}", cow),
-            Literal::String(cow) => write!(f, "{}", cow),
+            Literal::String(cow) => write!(f, "'{}'", cow),
             Literal::Boolean(b) => write!(f, "{}", b),
             Literal::Integer(i) => write!(f, "{}", i),
             Literal::Float(fl) => write!(f, "{}", fl),

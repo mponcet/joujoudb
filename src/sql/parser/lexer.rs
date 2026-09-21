@@ -259,12 +259,13 @@ impl<'source> Lexer<'source> {
         };
 
         if let Some(double_char_token) = double_char_token {
+            self.chars.next();
             let token = Token {
                 kind: double_char_token,
                 text: Cow::from(&self.source[self.offset..self.offset + 2]),
                 offset,
             };
-            self.offset += 2;
+            self.offset += token.text.len();
             Ok(Some(token))
         } else {
             let token = Token {
@@ -272,7 +273,7 @@ impl<'source> Lexer<'source> {
                 text: Cow::from(&self.source[self.offset..self.offset + 1]),
                 offset,
             };
-            self.offset += 1;
+            self.offset += token.text.len();
             Ok(Some(token))
         }
     }

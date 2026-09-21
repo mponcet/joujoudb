@@ -36,15 +36,21 @@ trait TokenKindExt {
 impl TokenKindExt for TokenKind {
     fn prefix_binding_power(&self) -> ((), u8) {
         match self {
-            TokenKind::Plus | TokenKind::Minus => ((), 5),
+            TokenKind::Plus | TokenKind::Minus => ((), 7),
             _ => panic!("not an operator: {self}"),
         }
     }
 
     fn infix_binding_power(&self) -> Option<(u8, u8)> {
         let bp = match self {
-            TokenKind::Plus | TokenKind::Minus | TokenKind::Keyword(Keyword::Or) => (1, 2),
-            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Keyword(Keyword::And) => (3, 4),
+            TokenKind::Equal
+            | TokenKind::BangEqual
+            | TokenKind::Less
+            | TokenKind::LessEqual
+            | TokenKind::Greater
+            | TokenKind::GreaterEqual => (1, 2),
+            TokenKind::Plus | TokenKind::Minus | TokenKind::Keyword(Keyword::Or) => (3, 4),
+            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Keyword(Keyword::And) => (5, 6),
             _ => return None,
         };
 
@@ -140,6 +146,7 @@ impl<'source> Parser<'source> {
                 table: None,
                 name: token.text,
             },
+            TokenKind::String { .. } => ast::Expression::Literal(ast::Literal::String(token.text)),
             TokenKind::Number => {
                 let n = token.text.as_ref();
                 if n.find('.').is_some() {
@@ -193,6 +200,12 @@ impl<'source> Parser<'source> {
                 TokenKind::Minus => TokenKind::Minus,
                 TokenKind::Asterisk => TokenKind::Asterisk,
                 TokenKind::Slash => TokenKind::Slash,
+                TokenKind::Equal => TokenKind::Equal,
+                TokenKind::BangEqual => TokenKind::BangEqual,
+                TokenKind::Less => TokenKind::Less,
+                TokenKind::LessEqual => TokenKind::LessEqual,
+                TokenKind::Greater => TokenKind::Greater,
+                TokenKind::GreaterEqual => TokenKind::GreaterEqual,
                 TokenKind::Keyword(Keyword::Or) => TokenKind::Keyword(Keyword::Or),
                 TokenKind::Keyword(Keyword::And) => TokenKind::Keyword(Keyword::And),
                 TokenKind::RightParen => TokenKind::RightParen,
@@ -218,6 +231,12 @@ impl<'source> Parser<'source> {
                     TokenKind::Minus => ast::Operator::Minus(l, r),
                     TokenKind::Asterisk => ast::Operator::Mul(l, r),
                     TokenKind::Slash => ast::Operator::Div(l, r),
+                    TokenKind::Equal => ast::Operator::Equal(l, r),
+                    TokenKind::BangEqual => ast::Operator::NotEqual(l, r),
+                    TokenKind::Less => ast::Operator::Less(l, r),
+                    TokenKind::LessEqual => ast::Operator::LessEqual(l, r),
+                    TokenKind::Greater => ast::Operator::Greater(l, r),
+                    TokenKind::GreaterEqual => ast::Operator::GreaterEqual(l, r),
                     TokenKind::Keyword(Keyword::Or) => ast::Operator::Or(l, r),
                     TokenKind::Keyword(Keyword::And) => ast::Operator::And(l, r),
                     _ => todo!(),
@@ -337,9 +356,12 @@ mod tests {
         let stms = [
             "SELECT a,b,c",
             "SELECT 1",
-            "SELECT 1+1*2",
+            "SELECT 1+1*2+1",
+            "SELECT 1<2 AND 4>3",
+            "SELECT 1>=2 OR 1<=3",
             "SELECT * FROM table",
             "SELECT * FROM table WHERE 1<1",
+            "SELECT * FROM table WHERE id=1 OR name='admin'",
             "SELECT * FROM table1,table2",
         ];
 
