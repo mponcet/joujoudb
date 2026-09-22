@@ -146,7 +146,7 @@ impl<'source> Parser<'source> {
                 table: None,
                 name: token.text,
             },
-            TokenKind::String { .. } => ast::Expression::Literal(ast::Literal::String(token.text)),
+            TokenKind::String => ast::Expression::Literal(ast::Literal::String(token.text)),
             TokenKind::Number => {
                 let n = token.text.as_ref();
                 if n.find('.').is_some() {
