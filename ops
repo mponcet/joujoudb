@@ -1,0 +1,1 @@
+{"author":{"id":"79a86c821b199c58cd8cd00bdc59a5e63fff9cabe08a9c31eaa194d18c87d1ae"},"ops":[{"type":1,"timestamp":1790197305,"nonce":"vzlEWzkTgwMg7QqpoiB+cDdBxOo=","title":"parser: bugs tracking issue","message":"- \u003c\u003e operator not supported\n- queries that fail to be parsed :\n    - SELECT +.2\n    - SELECT NULL","files":null}]}
