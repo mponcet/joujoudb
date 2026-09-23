@@ -196,19 +196,19 @@ impl<'source> Parser<'source> {
                 break;
             };
             let kind = match next_token.kind {
-                TokenKind::Plus => TokenKind::Plus,
-                TokenKind::Minus => TokenKind::Minus,
-                TokenKind::Asterisk => TokenKind::Asterisk,
-                TokenKind::Slash => TokenKind::Slash,
-                TokenKind::Equal => TokenKind::Equal,
-                TokenKind::BangEqual => TokenKind::BangEqual,
-                TokenKind::Less => TokenKind::Less,
-                TokenKind::LessEqual => TokenKind::LessEqual,
-                TokenKind::Greater => TokenKind::Greater,
-                TokenKind::GreaterEqual => TokenKind::GreaterEqual,
-                TokenKind::Keyword(Keyword::Or) => TokenKind::Keyword(Keyword::Or),
-                TokenKind::Keyword(Keyword::And) => TokenKind::Keyword(Keyword::And),
-                TokenKind::RightParen => TokenKind::RightParen,
+                kind @ (TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::Asterisk
+                | TokenKind::Slash
+                | TokenKind::Equal
+                | TokenKind::BangEqual
+                | TokenKind::Less
+                | TokenKind::LessEqual
+                | TokenKind::Greater
+                | TokenKind::GreaterEqual
+                | TokenKind::Keyword(Keyword::Or)
+                | TokenKind::Keyword(Keyword::And)
+                | TokenKind::RightParen) => kind,
                 TokenKind::Eof => break,
                 _ => {
                     break;
