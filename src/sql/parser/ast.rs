@@ -4,7 +4,7 @@ use std::borrow::Cow;
 pub enum Stmt<'source> {
     Select {
         distinct: bool,
-        columns: Vec<Expression<'source>>,
+        columns: Vec<Expr<'source>>,
         from: Option<Vec<From<'source>>>,
         r#where: Option<Where<'source>>,
         // group_by: Option<String>,
@@ -50,13 +50,6 @@ impl<'source> std::fmt::Display for Stmt<'source> {
     }
 }
 
-// #[derive(Debug)]
-// pub enum Column<'source> {
-//     Asterisk,
-//     Name(&'source str),
-//     Expression,
-// }
-
 #[derive(Debug)]
 pub struct From<'source> {
     pub table: Cow<'source, str>,
@@ -70,7 +63,7 @@ impl<'source> std::fmt::Display for From<'source> {
 
 #[derive(Debug)]
 pub struct Where<'source> {
-    pub expr: Expression<'source>,
+    pub expr: Expr<'source>,
 }
 
 impl<'source> std::fmt::Display for Where<'source> {
@@ -80,7 +73,7 @@ impl<'source> std::fmt::Display for Where<'source> {
 }
 
 #[derive(Debug)]
-pub enum Expression<'source> {
+pub enum Expr<'source> {
     // All columns.
     All,
     // Column name and if specified, a table name.
@@ -94,41 +87,41 @@ pub enum Expression<'source> {
     Operator(Operator<'source>),
 }
 
-impl<'source> std::fmt::Display for Expression<'source> {
+impl<'source> std::fmt::Display for Expr<'source> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expression::All => write!(f, "*"),
-            Expression::Column { table, name } => {
+            Expr::All => write!(f, "*"),
+            Expr::Column { table, name } => {
                 if let Some(table) = table {
                     write!(f, "{table}.{name}")
                 } else {
                     write!(f, "{name}")
                 }
             }
-            Expression::Literal(literal) => write!(f, "{literal}"),
-            Expression::Operator(operator) => write!(f, "{operator}"),
+            Expr::Literal(literal) => write!(f, "{literal}"),
+            Expr::Operator(operator) => write!(f, "{operator}"),
         }
     }
 }
 
 #[derive(Debug)]
 pub enum Operator<'source> {
-    Plus(Box<Expression<'source>>, Box<Expression<'source>>),
-    Minus(Box<Expression<'source>>, Box<Expression<'source>>),
-    Mul(Box<Expression<'source>>, Box<Expression<'source>>),
-    Div(Box<Expression<'source>>, Box<Expression<'source>>),
-    Or(Box<Expression<'source>>, Box<Expression<'source>>),
-    And(Box<Expression<'source>>, Box<Expression<'source>>),
-    Equal(Box<Expression<'source>>, Box<Expression<'source>>),
-    NotEqual(Box<Expression<'source>>, Box<Expression<'source>>),
-    Less(Box<Expression<'source>>, Box<Expression<'source>>),
-    LessEqual(Box<Expression<'source>>, Box<Expression<'source>>),
-    Greater(Box<Expression<'source>>, Box<Expression<'source>>),
-    GreaterEqual(Box<Expression<'source>>, Box<Expression<'source>>),
+    Plus(Box<Expr<'source>>, Box<Expr<'source>>),
+    Minus(Box<Expr<'source>>, Box<Expr<'source>>),
+    Mul(Box<Expr<'source>>, Box<Expr<'source>>),
+    Div(Box<Expr<'source>>, Box<Expr<'source>>),
+    Or(Box<Expr<'source>>, Box<Expr<'source>>),
+    And(Box<Expr<'source>>, Box<Expr<'source>>),
+    Equal(Box<Expr<'source>>, Box<Expr<'source>>),
+    NotEqual(Box<Expr<'source>>, Box<Expr<'source>>),
+    Less(Box<Expr<'source>>, Box<Expr<'source>>),
+    LessEqual(Box<Expr<'source>>, Box<Expr<'source>>),
+    Greater(Box<Expr<'source>>, Box<Expr<'source>>),
+    GreaterEqual(Box<Expr<'source>>, Box<Expr<'source>>),
 
     // Unary
-    Identity(Box<Expression<'source>>),
-    Negate(Box<Expression<'source>>),
+    Identity(Box<Expr<'source>>),
+    Negate(Box<Expr<'source>>),
 }
 
 impl<'source> std::fmt::Display for Operator<'source> {

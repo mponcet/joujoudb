@@ -131,34 +131,32 @@ impl<'source> Parser<'source> {
         parser.parse_statement()
     }
 
-    fn parse_expr(&mut self) -> Result<ast::Expression<'source>> {
+    fn parse_expr(&mut self) -> Result<ast::Expr<'source>> {
         self.parse_expr_bp(0)
     }
 
     /// min_bp: minimal binding power to fold the expression.
-    fn parse_expr_bp(&mut self, min_bp: u8) -> Result<ast::Expression<'source>> {
+    fn parse_expr_bp(&mut self, min_bp: u8) -> Result<ast::Expr<'source>> {
         let token = self.next()?.expect("should not happen");
 
         let mut lhs = match token.kind {
-            TokenKind::Asterisk => ast::Expression::All,
-            TokenKind::Ident => ast::Expression::Column {
+            TokenKind::Asterisk => ast::Expr::All,
+            TokenKind::Ident => ast::Expr::Column {
                 // TODO: handle table name
                 table: None,
                 name: token.text,
             },
-            TokenKind::String => ast::Expression::Literal(ast::Literal::String(token.text)),
+            TokenKind::String => ast::Expr::Literal(ast::Literal::String(token.text)),
             TokenKind::Number => {
                 let n = token.text.as_ref();
                 if n.find('.').is_some() {
-                    ast::Expression::Literal(ast::Literal::Float(n.parse().map_err(|e| {
-                        ParserError {
-                            message: format!("{e}"),
-                            src: self.source.to_string(),
-                            err_span: token.offset.into(),
-                        }
+                    ast::Expr::Literal(ast::Literal::Float(n.parse().map_err(|e| ParserError {
+                        message: format!("{e}"),
+                        src: self.source.to_string(),
+                        err_span: token.offset.into(),
                     })?))
                 } else {
-                    ast::Expression::Literal(ast::Literal::Integer(n.parse().map_err(|e| {
+                    ast::Expr::Literal(ast::Literal::Integer(n.parse().map_err(|e| {
                         ParserError {
                             message: format!("{e}"),
                             src: self.source.to_string(),
@@ -180,7 +178,7 @@ impl<'source> Parser<'source> {
                     TokenKind::Minus => ast::Operator::Negate(Box::new(rhs)),
                     _ => unreachable!(),
                 };
-                ast::Expression::Operator(operator)
+                ast::Expr::Operator(operator)
             }
             _ => {
                 return Err(ParserError {
@@ -241,7 +239,7 @@ impl<'source> Parser<'source> {
                     TokenKind::Keyword(Keyword::And) => ast::Operator::And(l, r),
                     _ => todo!(),
                 };
-                lhs = ast::Expression::Operator(operator);
+                lhs = ast::Expr::Operator(operator);
                 continue;
             }
 
@@ -311,7 +309,7 @@ impl<'source> Parser<'source> {
         })
     }
 
-    fn parse_select_list(&mut self) -> Result<Vec<ast::Expression<'source>>> {
+    fn parse_select_list(&mut self) -> Result<Vec<ast::Expr<'source>>> {
         let mut select_list = Vec::new();
 
         loop {

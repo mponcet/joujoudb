@@ -38,31 +38,6 @@ pub enum TokenKind {
     Eof,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum TokenKindTag {
-    LeftParen,
-    RightParen,
-    Comma,
-    Dot,
-    Minus,
-    Plus,
-    SemiColon,
-    Slash,
-    Asterisk,
-    Bang,
-    BangEqual,
-    Equal,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
-    Ident,
-    String,
-    Number,
-    Keyword,
-    Eof,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Keyword {
     Select,
