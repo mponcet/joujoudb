@@ -134,20 +134,20 @@ pub enum Operator<'source> {
 impl<'source> std::fmt::Display for Operator<'source> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Operator::Plus(lhs, rhs) => write!(f, "{lhs}+{rhs}"),
-            Operator::Minus(lhs, rhs) => write!(f, "{lhs}-{rhs}"),
-            Operator::Mul(lhs, rhs) => write!(f, "{lhs}*{rhs}"),
-            Operator::Div(lhs, rhs) => write!(f, "{lhs}/{rhs}"),
+            Operator::Plus(lhs, rhs) => write!(f, "{lhs} + {rhs}"),
+            Operator::Minus(lhs, rhs) => write!(f, "{lhs} - {rhs}"),
+            Operator::Mul(lhs, rhs) => write!(f, "{lhs} * {rhs}"),
+            Operator::Div(lhs, rhs) => write!(f, "{lhs} / {rhs}"),
             Operator::Or(lhs, rhs) => write!(f, "{lhs} OR {rhs}"),
             Operator::And(lhs, rhs) => write!(f, "{lhs} AND {rhs}"),
             Operator::Identity(expr) => write!(f, "{expr}"),
             Operator::Negate(expr) => write!(f, "-{expr}"),
-            Operator::Equal(lhs, rhs) => write!(f, "{lhs}={rhs}"),
-            Operator::NotEqual(lhs, rhs) => write!(f, "{lhs}!={rhs}"),
-            Operator::Less(lhs, rhs) => write!(f, "{lhs}<{rhs}"),
-            Operator::LessEqual(lhs, rhs) => write!(f, "{lhs}<={rhs}"),
-            Operator::Greater(lhs, rhs) => write!(f, "{lhs}>{rhs}"),
-            Operator::GreaterEqual(lhs, rhs) => write!(f, "{lhs}>={rhs}"),
+            Operator::Equal(lhs, rhs) => write!(f, "{lhs} = {rhs}"),
+            Operator::NotEqual(lhs, rhs) => write!(f, "{lhs} != {rhs}"),
+            Operator::Less(lhs, rhs) => write!(f, "{lhs} < {rhs}"),
+            Operator::LessEqual(lhs, rhs) => write!(f, "{lhs} <= {rhs}"),
+            Operator::Greater(lhs, rhs) => write!(f, "{lhs} > {rhs}"),
+            Operator::GreaterEqual(lhs, rhs) => write!(f, "{lhs} >= {rhs}"),
         }
     }
 }

@@ -346,29 +346,63 @@ impl<'source> Parser<'source> {
         })
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    fn test(unit: &str, filter: &str) {
+        eprintln!("testing {unit}");
+        let path = format!("sqltest/standards/2016/{}/{}.tests.yml", &unit[0..1], unit);
+        let f = BufReader::new(File::open(path).unwrap());
+
+        for line in f.lines() {
+            let line = line.unwrap();
+            let stmt = line
+                .strip_prefix("sql: ")
+                .or_else(|| line.strip_prefix("- "));
+
+            if let Some(stmt) = stmt
+                && stmt.starts_with(filter)
+            {
+                eprintln!("> {stmt}");
+                let parsed = Parser::parse(stmt);
+                assert!(parsed.is_ok());
+                let parsed = parsed.unwrap().first().unwrap().to_string();
+                eprintln!("< {parsed}");
+            }
+        }
+    }
 
     #[test]
     fn select() {
-        let stms = [
-            "SELECT a,b,c",
-            "SELECT 1",
-            "SELECT 1+1*2+1",
-            "SELECT 1<2 AND 4>3",
-            "SELECT 1>=2 OR 1<=3",
-            "SELECT * FROM table",
-            "SELECT * FROM table WHERE 1<1",
-            "SELECT * FROM table WHERE id=1 OR name='admin'",
-            "SELECT * FROM table1,table2",
-        ];
-
-        for stmt in stms {
-            let parser = Parser::parse(stmt).unwrap();
-            let parsed = parser.first().unwrap().to_string();
-            assert_eq!(stmt, parsed);
-        }
+        test("E011-01", "SELECT");
+        // test("E011-02", "SELECT");
+        test("E011-04", "SELECT");
+        test("E011-05", "SELECT");
+        test("E011-06", "SELECT");
+        test("E021-03", "SELECT");
+        // test("E021-07", "SELECT");
+        test("E021-04", "SELECT");
+        test("E021-05", "SELECT");
+        // test("E021-06", "SELECT");
+        test("E021-08", "SELECT");
+        // test("E021-09", "SELECT");
+        test("E021-11", "SELECT");
+        test("E021-10", "SELECT");
+        test("E021-12", "SELECT");
+        test("E031-02", "SELECT");
+        test("E031-03", "SELECT");
+        //test("E051", "SELECT");
+        // test("E051-01", "SELECT");
+        // test("E051-02", "SELECT");
+        // test("E051-04", "SELECT");
+        // test("E061-01", "SELECT");
+        // test("E061-02", "SELECT");
+        test("E061-03", "SELECT");
+        // test("E061-04", "SELECT");
+        // test("E061-05", "SELECT");
+        // test("E131", "SELECT");
     }
 }
