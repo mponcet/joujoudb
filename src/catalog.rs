@@ -3,7 +3,7 @@ use crate::config::CONFIG;
 use crate::sql::schema::{Column, ConstraintsBuilder, DataType, Schema};
 use crate::sql::types::Value;
 use crate::storage::{DatabaseName, DatabaseRootDirectory, FileStorage, StorageBackend, TableName};
-use crate::table::Table;
+use crate::table::{Table, TableIterator};
 use crate::tuple::Tuple;
 
 use std::path::Path;
@@ -216,6 +216,47 @@ impl<S: StorageBackend + 'static> Catalog<S> {
 
         Ok(())
     }
+
+    fn schema(&self, db_name: &DatabaseName, table_name: &TableName) -> Schema {
+        let columns = self
+            .information_schema_columns
+            .iter()
+            .filter_map(|tuple| {
+                let values = tuple.values();
+                let Value::VarChar(db) = &values[0] else {
+                    unreachable!()
+                };
+                let Value::VarChar(table) = &values[1] else {
+                    unreachable!()
+                };
+
+                if db_name.as_str() == db && table_name.as_str() == table {
+                    let Value::VarChar(column_name) = &values[2] else {
+                        unreachable!();
+                    };
+                    let Value::VarChar(nullable) = &values[4] else {
+                        unreachable!();
+                    };
+                    let Value::VarChar(data_type) = &values[5] else {
+                        unreachable!();
+                    };
+                    let constraints = match nullable.as_str() {
+                        "YES" => ConstraintsBuilder::new().nullable().build(),
+                        _ => ConstraintsBuilder::new().build(),
+                    };
+                    Some(Column::new(
+                        column_name.clone(),
+                        DataType::try_from(data_type.as_str()).unwrap(),
+                        constraints,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Schema::try_new(columns).unwrap()
+    }
 }
 
 #[cfg(test)]
@@ -260,5 +301,7 @@ mod tests {
         let catalog = Catalog::with_root_path(root_path);
         assert_eq!(catalog.information_schema_tables.iter().count(), 1);
         assert_eq!(catalog.information_schema_columns.iter().count(), 2);
+
+        assert_eq!(catalog.schema(&db_name, &table_name), schema);
     }
 }

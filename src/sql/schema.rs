@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use thiserror::Error;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DataType {
     Boolean,
     Integer,
@@ -19,6 +19,20 @@ impl std::fmt::Display for DataType {
             DataType::VarChar => "VARCHAR",
         };
         write!(f, "{s}")
+    }
+}
+
+impl TryFrom<&str> for DataType {
+    type Error = String;
+
+    fn try_from(data_type: &str) -> Result<Self, Self::Error> {
+        match data_type {
+            "BOOLEAN" => Ok(DataType::Boolean),
+            "INTEGER" => Ok(DataType::Integer),
+            "FLOAT" => Ok(DataType::Float),
+            "VARCHAR" => Ok(DataType::VarChar),
+            _ => Err(format!("unknown data type {data_type}")),
+        }
     }
 }
 
@@ -50,7 +64,7 @@ impl Default for ConstraintsBuilder {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Constraints(u8);
 
 impl Constraints {
@@ -63,7 +77,7 @@ impl Constraints {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Column {
     pub column_name: String,
     pub data_type: DataType,
@@ -80,7 +94,7 @@ impl Column {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Schema {
     columns: Vec<Column>,
 }

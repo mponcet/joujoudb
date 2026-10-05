@@ -156,7 +156,6 @@ impl Tuple {
         Box::leak(v.into_boxed_slice())
     }
 
-    #[cfg(test)]
     pub fn values(&self) -> &[Value] {
         self.values.as_slice()
     }

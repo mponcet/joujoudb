@@ -102,7 +102,7 @@ impl<S: StorageBackend + 'static> Table<S> {
     }
 
     pub fn iter(&self) -> TableIterator<'_, S> {
-        TableIterator::new(self)
+        self.into_iter()
     }
 }
 
@@ -112,11 +112,14 @@ pub struct TableIterator<'table, S: StorageBackend + 'static> {
     slot_id: HeapPageSlotId,
 }
 
-impl<'table, S: StorageBackend + 'static> TableIterator<'table, S> {
-    pub fn new(table: &'table Table<S>) -> Self {
-        Self {
-            table,
-            page_id: table.cache.first_page_id(),
+impl<'table, S: StorageBackend + 'static> IntoIterator for &'table Table<S> {
+    type Item = Tuple;
+    type IntoIter = TableIterator<'table, S>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        TableIterator {
+            table: self,
+            page_id: self.cache.first_page_id(),
             slot_id: HeapPageSlotId::new(0),
         }
     }
