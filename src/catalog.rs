@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 
 use thiserror::Error;
 
-struct Catalog {
+pub struct Catalog {
     db_root: DatabaseRootDirectory,
     information_schema_tables: Table,
     information_schema_columns: Table,
@@ -215,6 +215,18 @@ impl Catalog {
         }
 
         Ok(())
+    }
+
+    fn open_table(&self, db_name: &DatabaseName, table_name: &TableName) -> Table {
+        let tables_path = self.db_root.table_path(&db_name, &table_name).unwrap();
+        let tables_storage = FileStorage::open(tables_path).unwrap();
+
+        Table::try_new(
+            table_name.as_str(),
+            &self.schema(db_name, table_name),
+            GLOBAL_PAGE_CACHE.cache_storage(tables_storage),
+        )
+        .unwrap()
     }
 
     fn schema(&self, db_name: &DatabaseName, table_name: &TableName) -> Schema {
