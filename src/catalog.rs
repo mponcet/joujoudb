@@ -218,42 +218,54 @@ impl<S: StorageBackend + 'static> Catalog<S> {
     }
 
     fn schema(&self, db_name: &DatabaseName, table_name: &TableName) -> Schema {
-        let columns = self
-            .information_schema_columns
-            .iter()
-            .filter_map(|tuple| {
-                let values = tuple.values();
-                let Value::VarChar(db) = &values[0] else {
-                    unreachable!()
-                };
-                let Value::VarChar(table) = &values[1] else {
-                    unreachable!()
-                };
+        let columns = {
+            let mut columns = self
+                .information_schema_columns
+                .iter()
+                .filter_map(|tuple| {
+                    let values = tuple.values();
+                    let Value::VarChar(db) = &values[0] else {
+                        unreachable!()
+                    };
+                    let Value::VarChar(table) = &values[1] else {
+                        unreachable!()
+                    };
 
-                if db_name.as_str() == db && table_name.as_str() == table {
-                    let Value::VarChar(column_name) = &values[2] else {
-                        unreachable!();
-                    };
-                    let Value::VarChar(nullable) = &values[4] else {
-                        unreachable!();
-                    };
-                    let Value::VarChar(data_type) = &values[5] else {
-                        unreachable!();
-                    };
-                    let constraints = match nullable.as_str() {
-                        "YES" => ConstraintsBuilder::new().nullable().build(),
-                        _ => ConstraintsBuilder::new().build(),
-                    };
-                    Some(Column::new(
-                        column_name.clone(),
-                        DataType::try_from(data_type.as_str()).unwrap(),
-                        constraints,
-                    ))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+                    if db_name.as_str() == db && table_name.as_str() == table {
+                        let Value::VarChar(column_name) = &values[2] else {
+                            unreachable!();
+                        };
+                        let Value::Integer(ordinal_position) = values[3] else {
+                            unreachable!();
+                        };
+                        let Value::VarChar(nullable) = &values[4] else {
+                            unreachable!();
+                        };
+                        let Value::VarChar(data_type) = &values[5] else {
+                            unreachable!();
+                        };
+                        let constraints = match nullable.as_str() {
+                            "YES" => ConstraintsBuilder::new().nullable().build(),
+                            _ => ConstraintsBuilder::new().build(),
+                        };
+                        Some((
+                            ordinal_position,
+                            Column::new(
+                                column_name.clone(),
+                                DataType::try_from(data_type.as_str()).unwrap(),
+                                constraints,
+                            ),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            // sort columns by their ordinal position
+            columns.sort_unstable_by_key(|k| k.0);
+            columns.into_iter().map(|(_, col)| col).collect()
+        };
 
         Schema::try_new(columns).unwrap()
     }
