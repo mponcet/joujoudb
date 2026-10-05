@@ -1,0 +1,1 @@
+{"author":{"id":"79a86c821b199c58cd8cd00bdc59a5e63fff9cabe08a9c31eaa194d18c87d1ae"},"ops":[{"type":1,"timestamp":1791237028,"nonce":"Et930scGiI6oRqjB7pzEePBU+a0=","title":"rust idiomatics","message":"- TableName / DatabaseName deref trait instead of as_str","files":null}]}
