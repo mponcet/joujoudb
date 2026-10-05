@@ -1,8 +1,10 @@
 pub mod cache;
 pub mod catalog;
 pub mod config;
+// pub mod execution;
 pub mod indexes;
 pub mod pages;
+// pub mod plan;
 pub mod serialize;
 pub mod sql;
 pub mod storage;
