@@ -6,13 +6,13 @@ use std::thread::JoinHandle;
 use crate::cache::memcache::MemCache;
 use crate::config::CONFIG;
 use crate::pages::{PageId, PageMetadata};
-use crate::storage::{FileStorage, StorageBackend, StorageError, StorageId};
+use crate::storage::{FileStorage, StorageError, StorageId};
 
 use super::memcache::{MemCacheError, PageRef, PageRefMut};
 use parking_lot::{Mutex, RwLock};
 use thiserror::Error;
 
-pub static GLOBAL_PAGE_CACHE: LazyLock<PageCache<FileStorage>> =
+pub static GLOBAL_PAGE_CACHE: LazyLock<PageCache> =
     LazyLock::new(|| PageCache::try_new().expect("Could not initialize global page cache"));
 
 #[derive(Error, Debug)]
@@ -29,11 +29,11 @@ pub enum PageCacheError {
 /// - Fetching pages from the disk and loading them into memory.
 /// - Evicting pages from memory when the cache is full.
 /// - Writing dirty pages back to the disk.
-pub struct PageCache<S: StorageBackend + 'static> {
-    inner: Arc<PageCacheInner<S>>,
+pub struct PageCache {
+    inner: Arc<PageCacheInner>,
 }
 
-impl<S: StorageBackend + 'static> PageCache<S> {
+impl PageCache {
     /// Creates a new `PageCache`.
     pub fn try_new() -> Result<Self, PageCacheError> {
         let pagecache = Self {
@@ -54,10 +54,10 @@ impl<S: StorageBackend + 'static> PageCache<S> {
     /// Adds a storage backend to the shared page cache.
     ///
     /// Returns a page cache for the storage given.
-    pub fn cache_storage(&self, storage: S) -> StoragePageCache<S> {
+    pub fn cache_storage(&self, storage: FileStorage) -> FilePageCache {
         let storage_id = StorageId(self.next_storage_id.fetch_add(1, Ordering::Relaxed));
         self.storage_backends.write().insert(storage_id, storage);
-        StoragePageCache {
+        FilePageCache {
             pagecache: PageCache {
                 inner: Arc::clone(&self.inner),
             },
@@ -80,23 +80,23 @@ impl<S: StorageBackend + 'static> PageCache<S> {
     }
 }
 
-impl<S: StorageBackend + 'static> std::ops::Deref for PageCache<S> {
-    type Target = PageCacheInner<S>;
+impl std::ops::Deref for PageCache {
+    type Target = PageCacheInner;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-pub struct PageCacheInner<S: StorageBackend + 'static> {
+pub struct PageCacheInner {
     next_storage_id: AtomicU32,
-    storage_backends: RwLock<HashMap<StorageId, S>>,
+    storage_backends: RwLock<HashMap<StorageId, FileStorage>>,
     mem_cache: MemCache,
     dirty_pages: Mutex<Option<HashMap<StorageId, BTreeSet<PageId>>>>,
     writeback_jh: Mutex<Option<JoinHandle<()>>>,
 }
 
-impl<S: StorageBackend + 'static> Drop for PageCacheInner<S> {
+impl Drop for PageCacheInner {
     fn drop(&mut self) {
         if let Some(jh) = self.writeback_jh.lock().take() {
             let _ = jh.join();
@@ -105,7 +105,7 @@ impl<S: StorageBackend + 'static> Drop for PageCacheInner<S> {
     }
 }
 
-impl<S: StorageBackend + 'static> PageCacheInner<S> {
+impl PageCacheInner {
     /// Creates a new page, both in the cache and on disk.
     ///
     /// If the cache is full, it will try to evict a page to make space.
@@ -237,7 +237,7 @@ impl<S: StorageBackend + 'static> PageCacheInner<S> {
     }
 }
 
-impl<S: StorageBackend> Clone for PageCache<S> {
+impl Clone for PageCache {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -245,15 +245,15 @@ impl<S: StorageBackend> Clone for PageCache<S> {
     }
 }
 
-/// A page cache for a `StorageBackend` (a file for example) backed by a global `PageCache`.
+/// A page cache for a `FileStorage` (a file for example) backed by a global `PageCache`.
 ///
 /// Created with `PageCache::cache_storage`.
-pub struct StoragePageCache<S: StorageBackend + 'static> {
-    pagecache: PageCache<S>,
+pub struct FilePageCache {
+    pagecache: PageCache,
     storage_id: StorageId,
 }
 
-impl<S: StorageBackend> Clone for StoragePageCache<S> {
+impl Clone for FilePageCache {
     fn clone(&self) -> Self {
         Self {
             pagecache: self.pagecache.clone(),
@@ -262,7 +262,7 @@ impl<S: StorageBackend> Clone for StoragePageCache<S> {
     }
 }
 
-impl<S: StorageBackend + 'static> StoragePageCache<S> {
+impl FilePageCache {
     pub fn new_page(&self) -> Result<PageRefMut<'_>, PageCacheError> {
         self.pagecache.new_page(self.storage_id)
     }

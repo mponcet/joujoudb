@@ -17,4 +17,4 @@ pub trait EvictionPolicy: Send + Sync {
 }
 
 pub use memcache::{PageRef, PageRefMut};
-pub use pagecache::{GLOBAL_PAGE_CACHE, PageCache, PageCacheError, StoragePageCache};
+pub use pagecache::{FilePageCache, GLOBAL_PAGE_CACHE, PageCache, PageCacheError};

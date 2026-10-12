@@ -1,10 +1,8 @@
-use crate::cache::{PageCacheError, PageRef, PageRefMut, StoragePageCache};
+use crate::cache::{FilePageCache, PageCacheError, PageRef, PageRefMut};
+use crate::pages::btree_get_page_type;
 use crate::pages::{
     BTreePageError, BTreePageType, Key, PAGE_INVALID, PAGE_RESERVED, PageId, RecordId,
 };
-use crate::storage::StorageBackend;
-
-use crate::pages::btree_get_page_type;
 
 use thiserror::Error;
 
@@ -51,8 +49,8 @@ use thiserror::Error;
 ///           |                |                |                |
 ///           +----------------+----------------+----------------+  (Linked list)
 /// ```
-pub struct BTree<S: StorageBackend + 'static> {
-    page_cache: StoragePageCache<S>,
+pub struct BTree {
+    page_cache: FilePageCache,
 }
 
 #[derive(Error, Debug)]
@@ -63,7 +61,7 @@ pub enum BTreeError {
     PageCache(#[from] PageCacheError),
 }
 
-impl<S: StorageBackend> Clone for BTree<S> {
+impl Clone for BTree {
     fn clone(&self) -> Self {
         Self {
             page_cache: self.page_cache.clone(),
@@ -71,11 +69,11 @@ impl<S: StorageBackend> Clone for BTree<S> {
     }
 }
 
-impl<S: StorageBackend + 'static> BTree<S> {
+impl BTree {
     /// Creates a new B-tree.
     ///
     /// Returns a `Result` containing the new `BTree` instance, or a `BTreeError` on failure.
-    pub fn try_new(page_cache: StoragePageCache<S>) -> Result<Self, BTreeError> {
+    pub fn try_new(page_cache: FilePageCache) -> Result<Self, BTreeError> {
         let mut superblock_ref = page_cache.get_page_mut(PAGE_RESERVED)?;
         let superblock = superblock_ref.btree_superblock_mut();
         let mut root_page_ref = page_cache.new_page().map_err(BTreeError::PageCache)?;
@@ -303,7 +301,7 @@ impl<S: StorageBackend + 'static> BTree<S> {
     /// Creates an iterator over a range of keys.
     ///
     /// Returns a `Result` containing the `BTreeRangeIterator`, or a `BTreeError` on failure.
-    pub fn iter(&self, start: Key) -> Result<BTreeRangeIterator<'_, S>, BTreeError> {
+    pub fn iter(&self, start: Key) -> Result<BTreeRangeIterator<'_>, BTreeError> {
         let page_ref = self.find_leaf_page(start)?;
         let leaf_page = page_ref.btree_leaf_page();
         // FIXME: what if the key doesn't exist ?
@@ -320,13 +318,13 @@ impl<S: StorageBackend + 'static> BTree<S> {
     }
 }
 
-pub struct BTreeRangeIterator<'btree, S: StorageBackend + 'static> {
+pub struct BTreeRangeIterator<'btree> {
     pos: usize,
-    btree: &'btree BTree<S>,
+    btree: &'btree BTree,
     page_ref: PageRef<'btree>,
 }
 
-impl<'btree, S: StorageBackend + 'static> Iterator for BTreeRangeIterator<'btree, S> {
+impl<'btree> Iterator for BTreeRangeIterator<'btree> {
     type Item = (Key, RecordId);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -369,7 +367,7 @@ mod tests {
 
     const NR_KEYS: usize = 1000;
 
-    fn create_btree() -> BTree<FileStorage> {
+    fn create_btree() -> BTree {
         let storage_path = NamedTempFile::new().unwrap();
         let storage = FileStorage::create(storage_path).unwrap();
         let page_cache = PageCache::try_new().unwrap();
@@ -382,7 +380,7 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    fn print_btree(btree: &BTree<FileStorage>) {
+    fn print_btree(btree: &BTree) {
         let root_page_id = {
             let superblock_ref = btree.page_cache.get_page(PAGE_RESERVED).unwrap();
             let superblock = superblock_ref.btree_superblock();

@@ -2,8 +2,8 @@ use crate::cache::GLOBAL_PAGE_CACHE;
 use crate::config::CONFIG;
 use crate::sql::schema::{Column, ConstraintsBuilder, DataType, Schema};
 use crate::sql::types::Value;
-use crate::storage::{DatabaseName, DatabaseRootDirectory, FileStorage, StorageBackend, TableName};
-use crate::table::{Table, TableIterator};
+use crate::storage::{DatabaseName, DatabaseRootDirectory, FileStorage, TableName};
+use crate::table::Table;
 use crate::tuple::Tuple;
 
 use std::path::Path;
@@ -11,10 +11,10 @@ use std::sync::LazyLock;
 
 use thiserror::Error;
 
-struct Catalog<S: StorageBackend + 'static> {
+struct Catalog {
     db_root: DatabaseRootDirectory,
-    information_schema_tables: Table<S>,
-    information_schema_columns: Table<S>,
+    information_schema_tables: Table,
+    information_schema_columns: Table,
 }
 
 #[derive(Debug, Error)]
@@ -103,7 +103,7 @@ static INFORMATION_SCHEMA_COLUMNS: LazyLock<Schema> = LazyLock::new(|| {
     .unwrap()
 });
 
-impl Catalog<FileStorage> {
+impl Catalog {
     const INFORMATION_SCHEMA_DB: &str = "INFORMATION_SCHEMA";
     const INFORMATION_SCHEMA_TABLES_TABLE: &str = "TABLES";
     const INFORMATION_SCHEMA_COLUMNS_TABLE: &str = "COLUMNS";
@@ -164,7 +164,7 @@ impl Catalog<FileStorage> {
     }
 }
 
-impl<S: StorageBackend + 'static> Catalog<S> {
+impl Catalog {
     fn create_database(&mut self, db_name: &DatabaseName) -> Result<(), CatalogError> {
         self.db_root
             .create_database(db_name)

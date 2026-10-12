@@ -1,15 +1,14 @@
-use crate::cache::{PageCacheError, StoragePageCache};
+use crate::cache::{FilePageCache, PageCacheError};
 use crate::pages::{HeapPageError, HeapPageSlotId, PAGE_RESERVED, PageId, RecordId};
 use crate::sql::schema::Schema;
-use crate::storage::StorageBackend;
 use crate::tuple::{Tuple, TupleError};
 
 use thiserror::Error;
 
-pub struct Table<S: StorageBackend + 'static> {
+pub struct Table {
     pub name: String,
     pub schema: Schema,
-    cache: StoragePageCache<S>,
+    cache: FilePageCache,
 }
 
 #[derive(Debug, Error)]
@@ -22,12 +21,8 @@ pub enum TableError {
     Tuple(#[from] TupleError),
 }
 
-impl<S: StorageBackend + 'static> Table<S> {
-    pub fn try_new(
-        name: &str,
-        schema: &Schema,
-        cache: StoragePageCache<S>,
-    ) -> Result<Self, TableError> {
+impl Table {
+    pub fn try_new(name: &str, schema: &Schema, cache: FilePageCache) -> Result<Self, TableError> {
         Ok(Self {
             name: name.to_string(),
             schema: schema.clone(),
@@ -101,20 +96,20 @@ impl<S: StorageBackend + 'static> Table<S> {
         // TODO: check for column uniqueness
     }
 
-    pub fn iter(&self) -> TableIterator<'_, S> {
+    pub fn iter(&self) -> TableIterator<'_> {
         self.into_iter()
     }
 }
 
-pub struct TableIterator<'table, S: StorageBackend + 'static> {
-    table: &'table Table<S>,
+pub struct TableIterator<'table> {
+    table: &'table Table,
     page_id: PageId,
     slot_id: HeapPageSlotId,
 }
 
-impl<'table, S: StorageBackend + 'static> IntoIterator for &'table Table<S> {
+impl<'table> IntoIterator for &'table Table {
     type Item = Tuple;
-    type IntoIter = TableIterator<'table, S>;
+    type IntoIter = TableIterator<'table>;
 
     fn into_iter(self) -> Self::IntoIter {
         TableIterator {
@@ -125,7 +120,7 @@ impl<'table, S: StorageBackend + 'static> IntoIterator for &'table Table<S> {
     }
 }
 
-impl<'table, S: StorageBackend + 'static> Iterator for TableIterator<'table, S> {
+impl<'table> Iterator for TableIterator<'table> {
     type Item = Tuple;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -166,7 +161,7 @@ mod tests {
 
     const NR_ROWS: usize = 10000;
 
-    fn test_table(fill: bool) -> Table<FileStorage> {
+    fn test_table(fill: bool) -> Table {
         let storage_path = NamedTempFile::new().unwrap();
         let storage = FileStorage::create(storage_path).unwrap();
         let cache = GLOBAL_PAGE_CACHE.cache_storage(storage);
